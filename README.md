@@ -47,7 +47,6 @@ triton_vs_cuda_fsa/
 ├── scripts/                  # Script utili (es: script Python per analisi dati, plotting)
 ├── docs/                     # Documentazione del progetto (opzionale)
 ├── README.md                 # Questo file README
-└── LICENSE                   # File di licenza (opzionale)
 ```
 
 *   **`cuda/`**: Contiene l'implementazione del motore FSA in CUDA C++.
@@ -65,7 +64,6 @@ triton_vs_cuda_fsa/
 *   **`scripts/`**: Script utili per il progetto, come script Python per l'analisi dei dati di benchmark e la generazione di grafici.
 *   **`docs/`**: Cartella opzionale per documentazione aggiuntiva del progetto (es: diagrammi, note di design).
 *   **`README.md`**: Il presente file, che fornisce una panoramica del progetto.
-*   **`LICENSE`**: File opzionale per la licenza del progetto (es: MIT License, Apache 2.0 License).
 
 ## Getting Started
 
