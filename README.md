@@ -1,188 +1,155 @@
-Ecco il contenuto completo e dettagliato del file `README.md`, che fornisce istruzioni chiare per il setup dell'ambiente, l'esecuzione dei benchmark, l'analisi dei risultati e la gestione del progetto. Il file è scritto in Markdown e include sezioni per facilitare la navigazione.
+# Triton vs. CUDA: Valutazione Comparativa di Prestazioni e Complessità di Programmazione per l'Accelerazione GPU di Finite State Automata
 
----
+## Abstract
 
-# GNN Triton vs CUDA Comparison
+Questo progetto esplora l'efficacia di Triton, un linguaggio di programmazione GPU di alto livello, nell'accelerare l'esecuzione di Finite State Automata (FSA) su GPU, confrontandolo con CUDA, il linguaggio standard per la programmazione GPU. L'obiettivo è valutare se Triton semplifica lo sviluppo e offre prestazioni competitive rispetto a CUDA per questo tipo di workload, che presenta pattern di calcolo e accesso alla memoria diversi dalle tipiche applicazioni di deep learning per cui Triton è stato originariamente progettato.  Il progetto prevede l'implementazione di un motore di esecuzione FSA in Triton e CUDA, il benchmarking comparativo delle prestazioni su diversi tipi di FSA e input, e l'analisi della complessità di programmazione e della user experience in entrambi i linguaggi.  I risultati forniranno insight sulla viabilità di Triton come alternativa a CUDA per workload computazionali non convenzionali su GPU, come l'esecuzione di automi a stati finiti.
 
-Progetto di tesi magistrale per la valutazione comparativa di Triton e CUDA per l'accelerazione di Graph Neural Networks (GNNs). Questo repository contiene il codice sorgente, gli script di automazione, i notebook per l'analisi dei dati e la documentazione necessaria per replicare i risultati della tesi.
+## Domanda di Ricerca
 
-## Obiettivo del Progetto
+In che misura Triton, un linguaggio di programmazione GPU di alto livello, può semplificare lo sviluppo e fornire prestazioni competitive rispetto a CUDA, linguaggio di programmazione GPU a basso livello, per l'accelerazione di un motore di esecuzione di Finite State Automata (FSA) su GPU?
 
-L'obiettivo principale è confrontare Triton (linguaggio di programmazione GPU di alto livello) e CUDA (linguaggio di programmazione GPU di basso livello) in termini di:
-- **Prestazioni**: Tempo di esecuzione e throughput per micro-benchmark (GEMM, Conv2D) e layer GNN (GCN, GAT).
-- **Produttività**: Facilità d'uso, complessità del codice e tempo di sviluppo.
-- **User Experience**: Valutazione qualitativa della programmazione in Triton e CUDA.
+## Metodologia
 
-Il progetto è strutturato in fasi:
-1. Implementazione e ottimizzazione di micro-benchmark in Triton e CUDA.
-2. Implementazione e benchmarking di layer GNN rappresentativi.
-3. Analisi comparativa delle prestazioni e della user experience.
+Il progetto adotta un approccio di valutazione comparativa, che include:
+
+*   **Implementazione:** Sviluppo di un motore di esecuzione per Finite State Automata (FSA) sia in CUDA C++ (linguaggio di basso livello) che in Triton (linguaggio Python-like di alto livello).
+*   **Benchmarking:** Definizione di una suite di benchmark con diversi tipi di FSA e input, ed esecuzione di benchmark comparativi per misurare le prestazioni del motore FSA in CUDA e Triton.
+*   **Analisi Comparativa:** Confronto quantitativo delle prestazioni (throughput, latenza) e valutazione qualitativa della complessità di programmazione e della user experience in CUDA e Triton.
 
 ## Struttura della Repository
 
 ```
-gnn_triton_cuda_comparison/
-├── src/                          # Codice sorgente per implementazioni Triton e CUDA
-│   ├── microbenchmarks/          # Micro-benchmark (GEMM, Conv2D)
-│   ├── gnn_layers/               # Layer GNN (GCN, GAT)
-│   └── utils/                    # Funzioni di utilità
-├── data/                         # Dati di input e output
-│   ├── graphs/                   # Dataset di grafi (sintetici e reali)
-│   ├── benchmarks/               # Risultati dei benchmark (CSV)
-│   └── logs/                     # Log dei benchmark
-├── notebooks/                    # Notebook per analisi e visualizzazione
-├── scripts/                      # Script per automazione
-├── docs/                         # Documentazione del progetto
-├── tests/                        # Test unitari e funzionali
-├── requirements.txt              # Dipendenze Python
-├── README.md                     # Questo file
-└── LICENSE                       # Licenza del progetto
+triton_vs_cuda_fsa/
+├── cuda/                     # Implementazione CUDA del motore FSA
+│   ├── src/                  # Codice sorgente CUDA C++ (.cu, .h)
+│   │   ├── fsa_engine.cu   # Kernel CUDA per motore FSA
+│   │   ├── fsa_engine.h    # Header file (se necessario)
+│   │   └── utils.cu        # Utility functions (es: gestione memoria, benchmark)
+│   ├── include/              # Header files (se presenti)
+│   ├── Makefile              # File di build per compilare codice CUDA
+│   └── benchmarks/         # Benchmark specifici per CUDA
+│       ├── benchmark_fsa.cu  # Codice benchmark CUDA
+│       └── ...               # Altri file benchmark CUDA (se necessario)
+├── triton/                   # Implementazione Triton del motore FSA
+│   ├── src/                  # Codice sorgente Triton Python (.py)
+│   │   ├── fsa_engine_triton.py # Motore FSA in Triton
+│   │   └── utils_triton.py     # Utility functions Triton (se necessario)
+│   ├── benchmarks/         # Benchmark specifici per Triton
+│   │   ├── benchmark_fsa_triton.py # Codice benchmark Triton
+│   │   └── ...               # Altri file benchmark Triton (se necessario)
+├── common/                   # Codice comune a CUDA e Triton (se possibile)
+│   ├── include/              # Header files comuni (es: definizioni FSA)
+│   │   └── fsa_definition.h
+│   ├── data/                 # Dati di test, esempi di FSA, input benchmark
+│   │   ├── fsa_examples/     # Esempi di FSA (file di definizione)
+│   │   └── input_strings/   # Stringhe di input per benchmark
+├── results/                  # Cartella per salvare i risultati dei benchmark (CSV, grafici)
+├── scripts/                  # Script utili (es: script Python per analisi dati, plotting)
+├── docs/                     # Documentazione del progetto (opzionale)
+├── README.md                 # Questo file README
+└── LICENSE                   # File di licenza (opzionale)
 ```
 
-## Requisiti di Sistema
+*   **`cuda/`**: Contiene l'implementazione del motore FSA in CUDA C++.
+    *   `src/`: Codice sorgente CUDA, inclusi kernel FSA e utility.
+    *   `include/`: Header files per CUDA (se necessari).
+    *   `Makefile`: File per compilare il codice CUDA usando `nvcc`.
+    *   `benchmarks/`: Codice benchmark specifico per CUDA.
+*   **`triton/`**: Contiene l'implementazione del motore FSA in Triton (Python).
+    *   `src/`: Codice sorgente Triton Python per il motore FSA e utility.
+    *   `benchmarks/`: Codice benchmark specifico per Triton.
+*   **`common/`**: Contiene codice e dati condivisi tra le implementazioni CUDA e Triton.
+    *   `include/`: Header files comuni, come definizioni di strutture dati per FSA.
+    *   `data/`: Dati di test, esempi di FSA, e input per i benchmark.
+*   **`results/`**: Cartella dove verranno salvati i risultati dei benchmark in formato CSV e eventuali grafici.
+*   **`scripts/`**: Script utili per il progetto, come script Python per l'analisi dei dati di benchmark e la generazione di grafici.
+*   **`docs/`**: Cartella opzionale per documentazione aggiuntiva del progetto (es: diagrammi, note di design).
+*   **`README.md`**: Il presente file, che fornisce una panoramica del progetto.
+*   **`LICENSE`**: File opzionale per la licenza del progetto (es: MIT License, Apache 2.0 License).
 
-- **Sistema Operativo**: Linux (testato su Ubuntu 20.04 o superiore).
-- **Hardware**:
-  - GPU NVIDIA con supporto CUDA (es. architettura Ampere, Turing, Volta).
-  - Almeno 16 GB di RAM consigliati.
-- **Software**:
-  - CUDA Toolkit (versione 11.7 o superiore). Verifica con:
+## Getting Started
+
+### Prerequisites
+
+*   **Hardware:**
+    *   GPU NVIDIA compatibile con CUDA (verificato con RTX 4070).
+*   **Software:**
+    *   **Ubuntu Linux** (ambiente di sviluppo raccomandato).
+    *   **NVIDIA CUDA Toolkit** (installato e configurato).
+    *   **Python 3.x** (con `pip` package manager).
+    *   **Triton** (installato tramite `pip install triton`).
+    *   **PyTorch** (installato per Triton, tramite `pip install torch`).
+    *   **Build Tools:** `make`, `gcc`, `g++` (per compilazione CUDA).
+
+### Setup
+
+1.  **Clone the repository:**
     ```bash
-    nvcc --version
+    git clone <repository_url>
+    cd triton_vs_cuda_fsa
     ```
-  - Driver NVIDIA. Verifica con:
+
+2.  **Set up a Python virtual environment (optional but recommended):**
     ```bash
-    nvidia-smi
+    python3 -m venv .venv
+    source .venv/bin/activate  # On Linux/macOS
+    # .venv\Scripts\activate  # On Windows
     ```
-  - Python 3.8 o superiore. Verifica con:
+
+3.  **Install Triton and PyTorch (within the virtual environment if activated):**
     ```bash
-    python3 --version
+    pip install triton torch
     ```
 
-## Setup dell'Ambiente
+4.  **Ensure CUDA Toolkit is correctly installed and configured.** Verify that `nvcc --version` command works in your terminal.
 
-Segui questi passaggi per configurare l'ambiente virtuale Python e installare le dipendenze.
+## Building the Project
 
-1. **Clona la repository**:
-   ```bash
-   git clone https://github.com/<tuo-utente>/gnn_triton_cuda_comparison.git
-   cd gnn_triton_cuda_comparison
-   ```
+### CUDA Implementation
 
-2. **Esegui lo script di setup per creare e configurare l'ambiente virtuale**:
-   ```bash
-   chmod +x scripts/setup_env.sh
-   ./scripts/setup_env.sh
-   ```
-   Questo script:
-   - Crea un ambiente virtuale chiamato `gnn_triton_cuda_env`.
-   - Aggiorna `pip`.
-   - Installa le dipendenze elencate in `requirements.txt`.
-   - Verifica che PyTorch e Triton siano configurati correttamente.
-
-3. **Attiva l'ambiente virtuale**:
-   ```bash
-   source gnn_triton_cuda_env/bin/activate
-   ```
-
-4. **Verifica la configurazione**:
-   - Controlla che CUDA sia disponibile:
-     ```bash
-     python -c "import torch; print('CUDA disponibile:', torch.cuda.is_available())"
-     ```
-   - Controlla che Triton sia importato correttamente:
-     ```bash
-     python -c "import triton; print('Triton importato correttamente')"
-     ```
-
-## Compilazione dei Kernel CUDA
-
-I kernel CUDA devono essere compilati prima di eseguire i benchmark. Usa lo script fornito:
+To build the CUDA implementation of the FSA engine, navigate to the `cuda/` directory and use `make`:
 
 ```bash
-chmod +x scripts/compile_cuda.sh
-./scripts/compile_cuda.sh
+cd cuda/
+make
 ```
 
-Questo script compila i kernel CUDA per:
-- Micro-benchmark (GEMM, Conv2D).
-- Layer GNN (GCN, GAT).
+This will compile the CUDA source code using the `Makefile` and generate executable files in the `cuda/` directory (e.g., benchmark executables).
 
-I file oggetto `.o` saranno generati nelle rispettive directory (`src/microbenchmarks/` e `src/gnn_layers/`).
+## Running the Benchmarks
 
-## Esecuzione dei Benchmark
+### CUDA Benchmarks
 
-Gli script di automazione eseguono i benchmark e salvano i risultati in `data/benchmarks/`. Assicurati di avere l'ambiente virtuale attivato (`source gnn_triton_cuda_env/bin/activate`).
+To run the CUDA benchmarks, navigate to the `cuda/benchmarks/` directory (or wherever the benchmark executables are located after building) and execute the benchmark programs directly from the command line.  Refer to the specific benchmark files (e.g., `cuda/benchmarks/benchmark_fsa.cu`) for instructions on how to run them and interpret the command-line arguments (if any).
 
-### Micro-benchmark
+Example (assuming a benchmark executable is named `benchmark_fsa_cuda`):
 
-Esegui i micro-benchmark (GEMM, Conv2D):
 ```bash
-chmod +x scripts/run_microbenchmarks.sh
-./scripts/run_microbenchmarks.sh
+cd cuda/benchmarks/
+./benchmark_fsa_cuda
 ```
 
-I risultati saranno salvati in:
-- `data/benchmarks/microbenchmarks/gemm_results.csv`
-- `data/benchmarks/microbenchmarks/conv2d_results.csv`
+The output will typically be printed to the console, often in CSV format for easy data processing.
 
-### Layer GNN
+### Triton Benchmarks
 
-Esegui i benchmark per i layer GNN (GCN, GAT):
+To run the Triton benchmarks, navigate to the `triton/benchmarks/` directory and execute the Python benchmark scripts using `python`:
+
 ```bash
-chmod +x scripts/run_gnn_benchmarks.sh
-./scripts/run_gnn_benchmarks.sh
+cd triton/benchmarks/
+python benchmark_fsa_triton.py
 ```
 
-I risultati saranno salvati in:
-- `data/benchmarks/gnn_layers/gcn_results.csv`
-- `data/benchmarks/gnn_layers/gat_results.csv`
+Refer to the specific Triton benchmark files (e.g., `triton/benchmarks/benchmark_fsa_triton.py`) for any specific instructions or command-line arguments.
 
-## Analisi dei Risultati
+The output will typically be printed to the console in CSV format.
 
-I risultati dei benchmark possono essere analizzati utilizzando i notebook Jupyter in `notebooks/`. Assicurati di avere l'ambiente virtuale attivato.
+## Expected Results and Performance Metrics
 
-1. **Avvia Jupyter Notebook**:
-   ```bash
-   jupyter notebook
-   ```
+The benchmarks are designed to measure and compare the performance of the FSA engine implemented in CUDA and Triton.  Key performance metrics include:
 
-2. **Apri i notebook**:
-   - `notebooks/microbenchmarks_analysis.ipynb`: Analisi dei micro-benchmark (grafici di tempi di esecuzione, speedup).
-   - `notebooks/gnn_layers_analysis.ipynb`: Analisi dei layer GNN (grafici di throughput, tempi di esecuzione).
-   - `notebooks/user_experience_notes.ipynb`: Note qualitative sulla user experience di sviluppo.
+*   **Throughput:** The rate at which input strings are processed by the FSA engine (e.g., input strings processed per second).
+*   **Latency:** The time taken to process a single input string (or a batch of input strings).
 
-I notebook utilizzano Seaborn e Matplotlib per visualizzare i dati. I file CSV in `data/benchmarks/` vengono caricati automaticamente.
-
-## Test Unitari
-
-Esegui i test unitari per verificare la correttezza delle implementazioni:
-```bash
-pytest tests/
-```
-
-I test includono:
-- `tests/test_microbenchmarks.py`: Test per micro-benchmark.
-- `tests/test_gnn_layers.py`: Test per layer GNN.
-- `tests/test_utils.py`: Test per utility.
-
-## Documentazione
-
-La documentazione del progetto è disponibile in `docs/`:
-- `project_overview.md`: Panoramica del progetto.
-- `implementation_details.md`: Dettagli sulle implementazioni Triton e CUDA.
-- `benchmark_results.md`: Riassunto dei risultati dei benchmark.
-- `user_experience.md`: Valutazione della user experience.
-
-## Contributi e Licenza
-
-- **Contributi**: Se desideri contribuire, crea una pull request o segnala un problema nella sezione Issues.
-- **Licenza**: Questo progetto è rilasciato sotto la licenza MIT (vedi `LICENSE`).
-
-## Contatti
-
-Per domande o supporto, contatta:
-- Nome: [Il tuo nome]
-- Email: [La tua email]
-- GitHub: [Il tuo username GitHub]
+The benchmark results will be outputted in CSV format, allowing for easy analysis and comparison of performance between CUDA and Triton across different FSA types and input sizes.
 
