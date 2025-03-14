@@ -2,54 +2,49 @@
 #include <vector>
 #include <string>
 #include <cuda_runtime.h>
-#include <fsa_engine.h> // Includi l'header file del motore FSA
+#include "fsa_engine.h"
+#include "fsa_definition.h"
 
 int main() {
-    // ... Setup benchmark:
-    // ... 1. Definisci un FSA di test (crea una istanza della struct FSA e inizializzala) ...
-    FSA fsa; // Inizializzazione FSA (da completare)
+    // Esempio di FSA (placeholder)
+    FSA fsa;
+    fsa.num_states = 2;
+    fsa.num_alphabet_symbols = 2;
+    fsa.transition_function = {{1, 0}, {1, 1}}; // Esempio di funzione di transizione
+    fsa.start_state = 0;
+    fsa.accepting_states = {1};
 
-    // ... 2. Crea un batch di stringhe di input di test ...
-    std::vector<std::string> input_strings_host = {"stringa1", "stringa2", "stringa3"}; // Esempio
-    int num_strings = input_strings_host.size();
-    int max_string_length = 100; // Lunghezza massima stringa (esempio)
+    std::string input_string = "0101";
 
-    // ... 3. Converti stringhe di input in formato adatto per GPU (es: array di char) e alloca memoria GPU ...
-    char* input_strings_device;
-    bool* results_device;
-    // ... (Allocazione memoria GPU e copia stringhe host -> device) ...
+    FSA* dev_fsa;
+    char* dev_input_string;
+    bool* dev_output;
+    bool host_output;
 
-    // ... 4. Benchmark loop (esegui kernel più volte e misura tempo minimo) ...
-    float min_kernel_time_ms = 1e9;
-    int num_runs = 10;
+    // Allocazione memoria su device
+    cudaMalloc(&dev_fsa, sizeof(FSA));
+    cudaMalloc(&dev_input_string, input_string.length() + 1); // +1 per il terminatore null
+    cudaMalloc(&dev_output, sizeof(bool));
 
-    for (int run = 0; run < num_runs; ++run) {
-        cudaEvent_t start, stop;
-        cudaEventCreate(&start); cudaEventCreate(&stop);
-        cudaEventRecord(start, 0);
+    // Copia dati host -> device
+    cudaMemcpy(dev_fsa, &fsa, sizeof(FSA), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_input_string, input_string.c_str(), input_string.length() + 1, cudaMemcpyHostToDevice);
 
-        fsa_kernel<<<...>>>(fsa, input_strings_device, num_strings, max_string_length, results_device); // Lancia kernel
+    // Esecuzione kernel
+    dim3 blockDim(256); // Esempio blockDim
+    dim3 gridDim(1);    // Esempio gridDim
+    fsa_kernel<<<gridDim, blockDim>>>(dev_fsa, dev_input_string, dev_output);
 
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start, stop);
-        cudaEventDestroy(start); cudaEventDestroy(stop);
-        if (cudaGetLastError() != cudaSuccess) { /* ... error handling ... */ }
+    // Copia risultato device -> host
+    cudaMemcpy(&host_output, dev_output, sizeof(bool), cudaMemcpyDeviceToHost);
 
-        min_kernel_time_ms = std::min(min_kernel_time_ms, milliseconds);
-    }
+    std::cout << "Input string: " << input_string << std::endl;
+    std::cout << "FSA accepts: " << (host_output ? "true" : "false") << std::endl;
 
-    // ... 5. Copia risultati dalla GPU alla CPU ...
-    std::vector<bool> results_host(num_strings);
-    // ... (Copia results_device -> results_host) ...
-
-    // ... 6. Verifica e stampa risultati (es: per ogni stringa input, stampa se accettata o rifiutata) ...
-    std::cout << "Benchmark CUDA FSA Engine - Tempo minimo: " << min_kernel_time_ms << " ms" << std::endl;
-    // ... (Stampa risultati per ogni stringa) ...
-
-    // ... 7. Libera memoria GPU ...
-    // ... (cudaFree(...)) ...
+    // Free memory device
+    cudaFree(dev_fsa);
+    cudaFree(dev_input_string);
+    cudaFree(dev_output);
 
     return 0;
 }

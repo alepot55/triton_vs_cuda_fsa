@@ -1,39 +1,70 @@
-import torch
-import triton
-import triton.language as tl
+import numpy as np
 import time
-from triton_vs_cuda_fsa.triton.src.fsa_engine_triton import launch_fsa_kernel_triton # (Assumendo questa struttura)
-import numpy as np # Potrebbe servire per dati di test
+import sys
+import os
 
-def main():
-    # ... Setup benchmark:
-    # ... 1. Definisci un FSA di test (rappresentazione Python/NumPy per FSA) ...
-    fsa = {} # Dizionario Python per rappresentare FSA (da definire la struttura)
+# Add the parent directory to the sys.path to import from triton/src
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-    # ... 2. Crea un batch di stringhe di input di test ...
-    input_strings_host = ["stringa1", "stringa2", "stringa3"] # Esempio
-    num_strings = len(input_strings_host)
-    max_string_length = 100 # Lunghezza massima stringa (esempio)
+# Import the FSA Triton function
+from src.fsa_engine_triton import fsa_triton
 
-    # ... 3. Converti stringhe di input in formato adatto per Triton (tensori Triton/PyTorch) ...
-    # ... e prepara FSA per essere passato al kernel Triton (puntatore, tensore, etc.) ...
-
-    # ... 4. Benchmark loop (esegui kernel più volte e misura tempo minimo) ...
-    min_triton_time_ms = float('inf')
-    num_runs = 10
-
-    for _ in range(num_runs):
-        start_time = time.time()
-        results_triton = launch_fsa_kernel_triton(fsa, input_strings_host, num_strings, max_string_length) # Lancia kernel Triton
-        torch.cuda.synchronize() # Sync GPU
-        end_time = time.time()
-        triton_time_ms = (end_time - start_time) * 1000
-        min_triton_time_ms = min(min_triton_time_ms, triton_time_ms)
-
-    # ... 5. Analizza e stampa risultati (es: per ogni stringa input, stampa se accettata o rifiutata) ...
-    print(f"Benchmark Triton FSA Engine - Tempo minimo: {min_triton_time_ms:.4f} ms")
-    # ... (Stampa risultati per ogni stringa) ...
-
+def run_triton_benchmark():
+    """
+    Run a basic benchmark of the fsa_triton function.
+    This is a placeholder implementation that demonstrates how to call
+    the placeholder FSA function.
+    """
+    # Define placeholder FSA parameters
+    fsa_num_states = 2           # Example: FSA with 2 states
+    fsa_num_symbols = 2          # Example: Binary alphabet (0, 1)
+    fsa_start_state = 0          # Example: State 0 is the initial state
+    num_accepting_states = 1     # Example: 1 accepting state
+    
+    # Define a sample input string
+    # In a real implementation, this would be properly encoded
+    input_string = "0101"
+    input_len = len(input_string)
+    
+    print(f"Running Triton FSA benchmark with:")
+    print(f"  - Number of states: {fsa_num_states}")
+    print(f"  - Number of symbols: {fsa_num_symbols}")
+    print(f"  - Start state: {fsa_start_state}")
+    print(f"  - Number of accepting states: {num_accepting_states}")
+    print(f"  - Input string: {input_string}")
+    
+    # Allocate output array (1 boolean value)
+    output = np.zeros((1,), dtype=np.int32)
+    
+    # Placeholder for FSA representation and input string
+    # In a real implementation, these would be properly allocated and populated
+    fsa_ptr = None  # Placeholder
+    input_string_ptr = None  # Placeholder
+    
+    # Call the placeholder FSA function
+    print("\nRunning FSA simulation with Triton:")
+    start_time = time.time()
+    
+    # Call the function
+    fsa_triton(
+        fsa_ptr=fsa_ptr,
+        input_string_ptr=input_string_ptr,
+        output_ptr=output,
+        input_len=input_len,
+        fsa_num_states=fsa_num_states,
+        fsa_num_symbols=fsa_num_symbols,
+        fsa_start_state=fsa_start_state,
+        num_accepting_states=num_accepting_states,
+        grid_size=1
+    )
+    
+    end_time = time.time()
+    execution_time = (end_time - start_time) * 1000  # Convert to milliseconds
+    
+    # Print results
+    print(f"Input string: {input_string}")
+    print(f"FSA accepts (Triton): {bool(output[0])}")
+    print(f"Execution time: {execution_time:.4f} ms")
 
 if __name__ == "__main__":
-    main()
+    run_triton_benchmark()

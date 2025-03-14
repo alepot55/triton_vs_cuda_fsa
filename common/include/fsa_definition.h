@@ -1,23 +1,16 @@
 #ifndef FSA_DEFINITION_H
 #define FSA_DEFINITION_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <vector>
+#include <string>
 
-// *** DEFINIZIONE DELLA STRUTTURA DATI FSA (da completare!) ***
-// *** Questa definizione dovrebbe essere compatibile sia con CUDA che con Triton ***
-typedef struct FSA_Definition {
+// Definizione MOLTO semplificata di un FSA per iniziare
+struct FSA {
     int num_states;
-    int num_symbols;
-    // ... Membri per rappresentare transizioni, stato iniziale, stati finali ...
-    // ... Scegli una rappresentazione efficiente per la GPU (es: matrice di transizione, adjacency list) ...
-
-} FSA_Definition;
-
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
+    int num_alphabet_symbols;
+    std::vector<std::vector<int>> transition_function; // transition_function[state][symbol] = next_state
+    int start_state;
+    std::vector<int> accepting_states;
+};
 
 #endif // FSA_DEFINITION_H
