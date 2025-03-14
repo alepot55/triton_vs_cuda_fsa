@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <chrono> // Per misurare il tempo
 #include <cuda_runtime.h>
 #include "fsa_engine.h"
 #include "fsa_definition.h"
@@ -30,16 +31,27 @@ int main() {
     cudaMemcpy(dev_fsa, &fsa, sizeof(FSA), cudaMemcpyHostToDevice);
     cudaMemcpy(dev_input_string, input_string.c_str(), input_string.length() + 1, cudaMemcpyHostToDevice);
 
+    auto start_time = std::chrono::high_resolution_clock::now(); // Inizio misurazione tempo
+
     // Esecuzione kernel
-    dim3 blockDim(256); // Esempio blockDim
-    dim3 gridDim(1);    // Esempio gridDim
+    dim3 blockDim(256);
+    dim3 gridDim(1);
     fsa_kernel<<<gridDim, blockDim>>>(dev_fsa, dev_input_string, dev_output);
+
+    cudaDeviceSynchronize(); // Importante sincronizzare per misurare il tempo correttamente
+
+    auto end_time = std::chrono::high_resolution_clock::now(); // Fine misurazione tempo
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double execution_time_ms = duration.count() / 1000.0; // Tempo in millisecondi
 
     // Copia risultato device -> host
     cudaMemcpy(&host_output, dev_output, sizeof(bool), cudaMemcpyDeviceToHost);
 
-    std::cout << "Input string: " << input_string << std::endl;
-    std::cout << "FSA accepts: " << (host_output ? "true" : "false") << std::endl;
+    // Output strutturato per parsing
+    std::cout << "Benchmark: CUDA" << std::endl;
+    std::cout << "Input String: " << input_string << std::endl;
+    std::cout << "Accepts: " << (host_output ? "true" : "false") << std::endl;
+    std::cout << "Execution Time (ms): " << execution_time_ms << std::endl;
 
     // Free memory device
     cudaFree(dev_fsa);

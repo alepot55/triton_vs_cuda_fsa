@@ -38,14 +38,12 @@ def run_triton_benchmark():
     
     # Placeholder for FSA representation and input string
     # In a real implementation, these would be properly allocated and populated
-    fsa_ptr = None  # Placeholder
-    input_string_ptr = None  # Placeholder
-    
-    # Call the placeholder FSA function
+    fsa_ptr = None
+    input_string_ptr = None
+
     print("\nRunning FSA simulation with Triton:")
     start_time = time.time()
-    
-    # Call the function
+
     fsa_triton(
         fsa_ptr=fsa_ptr,
         input_string_ptr=input_string_ptr,
@@ -57,14 +55,15 @@ def run_triton_benchmark():
         num_accepting_states=num_accepting_states,
         grid_size=1
     )
-    
+
     end_time = time.time()
-    execution_time = (end_time - start_time) * 1000  # Convert to milliseconds
-    
-    # Print results
-    print(f"Input string: {input_string}")
-    print(f"FSA accepts (Triton): {bool(output[0])}")
-    print(f"Execution time: {execution_time:.4f} ms")
+    execution_time_ms = (end_time - start_time) * 1000
+
+    # Output strutturato per parsing
+    print("Benchmark: Triton")
+    print(f"Input String: {input_string}")
+    print(f"Accepts: {bool(output[0])}")
+    print(f"Execution Time (ms): {execution_time_ms:.4f}")
 
 if __name__ == "__main__":
     run_triton_benchmark()

@@ -1,5 +1,3 @@
-# CUDA_PATH ?= /usr  (or this line is just completely gone)
-
 NVCC := nvcc  # Changed to just 'nvcc' - assuming it's in PATH
 
 # Flags di compilazione

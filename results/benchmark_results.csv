@@ -1,0 +1,5 @@
+implementation,input_string,accepts,benchmark,execution_time_(ms),number_of_accepting_states,number_of_states,number_of_symbols,running_fsa_simulation_with_triton,running_triton_fsa_benchmark_with,start_state
+CUDA,0101,true,CUDA,0.108,,,,,,
+Triton,0101,True,Triton,0.0033,1,2,2,,,0
+CUDA,0101,true,CUDA,0.121,,,,,,
+Triton,0101,True,Triton,0.0026,1,2,2,,,0
