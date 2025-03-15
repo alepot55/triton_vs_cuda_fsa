@@ -4,7 +4,7 @@ NVCC := nvcc  # Changed to just 'nvcc' - assuming it's in PATH
 NVCCFLAGS := -g -G -arch=sm_70 -I../common/include -I./src # Adatta l'architettura GPU (es: sm_70 per RTX 20xx, sm_80 per A100, ecc.)
 
 # File sorgente e eseguibile
-SRC_FILES := src/fsa_engine.cu src/utils.cu src/test_manager.cu benchmarks/benchmark_fsa.cu  # ADDED benchmarks/benchmark_fsa.cu HERE
+SRC_FILES := src/fsa_engine.cu src/fsa_cuda.cu src/test_manager.cu benchmarks/benchmark_fsa.cu  # ADDED benchmarks/benchmark_fsa.cu HERE
 EXECUTABLE := fsa_engine_cuda
 
 OBJECTS := $(SRC_FILES:.cu=.o) # Create object files from source files

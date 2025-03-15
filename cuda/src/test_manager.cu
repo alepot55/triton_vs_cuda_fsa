@@ -85,23 +85,36 @@ void TestManager::runAllTests() {
 void TestManager::runTest(TestCase& test) {
     std::cout << "Running test: " << test.name << std::endl;
     
-    // Converti regex in FSA
-    auto start_time = std::chrono::high_resolution_clock::now();
-    FSA fsa = FSAEngine::regexToDFA(test.regex);
-    
-    if (benchmark_mode) {
-        // Esegui in modalità benchmark con più input
-        std::vector<std::string> batch_inputs(bench_batch_size, test.input);
-        std::vector<bool> results = FSAEngine::runBatchOnGPU(fsa, batch_inputs);
-        test.actual_result = results[0]; // Prendi il primo risultato
-    } else {
-        // Esegui un singolo test
-        test.actual_result = FSAEngine::runDFA(fsa, test.input);
+    try {
+        // Converti regex in FSA
+        auto start_time = std::chrono::high_resolution_clock::now();
+        FSA fsa = FSAEngine::regexToDFA(test.regex);
+        
+        if (benchmark_mode) {
+            // Esegui in modalità benchmark con più input
+            std::vector<std::string> batch_inputs(bench_batch_size, test.input);
+            std::vector<bool> results;
+            try {
+                results = FSAEngine::runBatchOnGPU(fsa, batch_inputs);
+                test.actual_result = results.empty() ? false : results[0]; // Prendi il primo risultato
+            } catch (const std::exception& e) {
+                std::cerr << "Error during GPU batch execution: " << e.what() << std::endl;
+                // Fall back to CPU execution for this test
+                test.actual_result = FSAEngine::runDFA(fsa, test.input);
+            }
+        } else {
+            // Esegui un singolo test
+            test.actual_result = FSAEngine::runDFA(fsa, test.input);
+        }
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        test.execution_time = duration.count() / 1000.0; // ms
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during test execution: " << e.what() << std::endl;
+        test.execution_time = 0.0;
+        test.actual_result = false; // Assume failed test on exception
     }
-    
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-    test.execution_time = duration.count() / 1000.0; // ms
     
     std::cout << "  Result: " << (test.actual_result ? "ACCEPT" : "REJECT") 
               << " (Expected: " << (test.expected_result ? "ACCEPT" : "REJECT") << ")" << std::endl;

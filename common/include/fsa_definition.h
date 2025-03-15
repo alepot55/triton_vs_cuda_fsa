@@ -11,6 +11,7 @@ struct FSA {
     std::vector<std::vector<int>> transition_function; // transition_function[state][symbol] = next_state
     int start_state;
     std::vector<int> accepting_states;
+    std::vector<char> alphabet; // Explicitly store alphabet symbols
 };
 
 #endif // FSA_DEFINITION_H

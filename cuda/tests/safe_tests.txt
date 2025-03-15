@@ -1,0 +1,37 @@
+# Simple safe tests that should not cause crashes
+# These tests avoid complex regexes and large inputs
+
+[Safe_EmptyRegex]
+regex = 
+input = 
+expect = true
+
+[Safe_SimpleEndsWith1]
+regex = (0|1)*1
+input = 0101
+expect = true
+
+[Safe_EmptyInput]
+regex = (0|1)*
+input = 
+expect = true
+
+[Safe_ShortInput]
+regex = 01
+input = 01
+expect = true
+
+[Safe_OneBit]
+regex = 1
+input = 1
+expect = true
+
+[Safe_ZeroLengthInput]
+regex = (0|1)*
+input = 
+expect = true
+
+[Safe_FallbackTest]
+regex = a*b*
+input = aabb
+expect = true
