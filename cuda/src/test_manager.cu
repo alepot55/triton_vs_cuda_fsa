@@ -95,15 +95,8 @@ void TestManager::runTest(TestCase& test) {
         std::vector<bool> results = FSAEngine::runBatchOnGPU(fsa, batch_inputs);
         test.actual_result = results[0]; // Prendi il primo risultato
     } else {
-        // For complex patterns, use GPU execution
-        if (test.regex.find("{3}") != std::string::npos || test.input.length() > 10) {
-            std::vector<std::string> inputs = {test.input};
-            std::vector<bool> results = FSAEngine::runBatchOnGPU(fsa, inputs);
-            test.actual_result = results[0];
-        } else {
-            // Esegui un singolo test su CPU
-            test.actual_result = FSAEngine::runDFA(fsa, test.input);
-        }
+        // Esegui un singolo test
+        test.actual_result = FSAEngine::runDFA(fsa, test.input);
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();

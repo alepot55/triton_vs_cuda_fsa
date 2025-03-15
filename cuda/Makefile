@@ -17,5 +17,9 @@ $(EXECUTABLE): $(OBJECTS) # Link object files to create executable
 %.o: %.cu # Rule to compile .cu files to .o object files
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
+# Compile rule for test_manager.cu
+src/test_manager.o: src/test_manager.cu src/test_manager.h
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
+
 clean:
 	rm -f $(EXECUTABLE) $(OBJECTS) # Clean object files as well
