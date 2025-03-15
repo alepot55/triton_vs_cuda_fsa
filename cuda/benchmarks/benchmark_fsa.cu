@@ -4,12 +4,228 @@
 #include <chrono>
 #include <cuda_runtime.h>
 #include <cstring>
+#include <fstream>
 #include "../src/fsa_engine.h"
 #include "fsa_definition.h"
-#include "../src/test_manager.h"
 
 // Dichiarazione esterna della funzione di conversione
 extern CUDAFSA convertToCUDAFSA(const FSA& fsa);
+
+// Struttura per gestire i casi di test
+struct TestCase {
+    std::string name;
+    std::string regex;
+    std::string input;
+    bool expected_result;
+    bool actual_result;
+    double execution_time;
+    
+    TestCase(const std::string& n, const std::string& r, const std::string& i, bool exp)
+        : name(n), regex(r), input(i), expected_result(exp), actual_result(false), execution_time(0.0) {}
+};
+
+// Funzione per caricare i test da file
+bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Cannot open test file " << filename << std::endl;
+        return false; 
+    }
+    
+    std::string line;
+    std::string current_section;
+    std::string test_name, regex, input;
+    bool expected = false;
+    
+    while (std::getline(file, line)) {
+        // Ignora linee vuote e commenti
+        if (line.empty() || line[0] == '#') { 
+            continue;
+        }
+        
+        // Nuova sezione/test
+        if (line[0] == '[' && line.back() == ']') {
+            // Salva il test precedente se esiste
+            if (!current_section.empty() && !regex.empty()) {
+                tests.push_back(TestCase(current_section, regex, input, expected));
+            }
+            
+            // Inizia nuovo test
+            current_section = line.substr(1, line.length() - 2);
+            regex = "";
+            input = "";
+            expected = false;
+            continue;
+        }
+        
+        // Parsing dei parametri
+        size_t pos = line.find('=');
+        if (pos != std::string::npos) {
+            std::string key = line.substr(0, pos);
+            std::string value = line.substr(pos + 1);
+            
+            // Rimuovi spazi iniziali e finali
+            key.erase(0, key.find_first_not_of(" \t"));
+            key.erase(key.find_last_not_of(" \t") + 1);
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+            
+            if (key == "regex") {
+                regex = value;
+            } else if (key == "input") {
+                input = value;
+            } else if (key == "expect") {
+                expected = (value == "true" || value == "1");
+            }
+        }
+    }
+    
+    // Aggiungi l'ultimo test
+    if (!current_section.empty() && !regex.empty()) {
+        tests.push_back(TestCase(current_section, regex, input, expected));
+    }
+    
+    std::cout << "Loaded " << tests.size() << " test cases from " << filename << std::endl;
+    return true;
+}
+
+// Esegue un singolo test usando direttamente i kernel CUDA
+void runTest(TestCase& test, int batch_size) {
+    std::cout << "Running test: " << test.name << std::endl;
+    
+    try {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        // Converti la regex in FSA
+        FSA fsa = FSAEngine::regexToDFA(test.regex);
+        
+        // Converti l'FSA in CUDAFSA (GPU-friendly)
+        CUDAFSA cuda_fsa = convertToCUDAFSA(fsa);
+        
+        // Setup CUDA memory
+        cudaError_t cudaStatus;
+        CUDAFSA* dev_fsa;
+        char* dev_input_string;
+        bool* dev_output;
+        bool result = false;
+        
+        cudaStatus = cudaMalloc(&dev_fsa, sizeof(CUDAFSA));
+        if (cudaStatus != cudaSuccess) {
+            throw std::runtime_error("cudaMalloc failed for dev_fsa");
+        }
+        
+        cudaStatus = cudaMemcpy(dev_fsa, &cuda_fsa, sizeof(CUDAFSA), cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            throw std::runtime_error("cudaMemcpy failed for dev_fsa");
+        }
+        
+        cudaStatus = cudaMalloc(&dev_input_string, test.input.length() + 1);
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            throw std::runtime_error("cudaMalloc failed for dev_input_string");
+        }
+        
+        cudaStatus = cudaMalloc(&dev_output, sizeof(bool));
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            cudaFree(dev_input_string);
+            throw std::runtime_error("cudaMalloc failed for dev_output");
+        }
+        
+        cudaStatus = cudaMemcpy(dev_input_string, test.input.c_str(), test.input.length() + 1, cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            cudaFree(dev_input_string);
+            cudaFree(dev_output);
+            throw std::runtime_error("cudaMemcpy failed for dev_input_string");
+        }
+        
+        // Launch kernel for single string
+        dim3 blockDim(256);
+        dim3 gridDim(1);
+        fsa_kernel<<<gridDim, blockDim>>>(dev_fsa, dev_input_string, dev_output);
+        
+        // Ensure kernel execution completes
+        cudaStatus = cudaDeviceSynchronize();
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            cudaFree(dev_input_string);
+            cudaFree(dev_output);
+            throw std::runtime_error("cudaDeviceSynchronize failed");
+        }
+        
+        // Get result
+        cudaStatus = cudaMemcpy(&result, dev_output, sizeof(bool), cudaMemcpyDeviceToHost);
+        if (cudaStatus != cudaSuccess) {
+            cudaFree(dev_fsa);
+            cudaFree(dev_input_string);
+            cudaFree(dev_output);
+            throw std::runtime_error("cudaMemcpy failed for result");
+        }
+        
+        test.actual_result = result;
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        test.execution_time = duration.count() / 1000.0; // ms
+        
+        // Clean up
+        cudaFree(dev_fsa);
+        cudaFree(dev_input_string);
+        cudaFree(dev_output);
+        
+        std::cout << "Test executed with CUDA kernel, execution time: " 
+                  << test.execution_time << " ms" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception during test execution: " << e.what() << std::endl;
+        test.execution_time = 0.0;
+        test.actual_result = false;
+    }
+    
+    std::cout << "  Result: " << (test.actual_result ? "ACCEPT" : "REJECT") 
+              << " (Expected: " << (test.expected_result ? "ACCEPT" : "REJECT") << ")" << std::endl;
+    std::cout << "  Time: " << test.execution_time << " ms" << std::endl;
+}
+
+// Esegue tutti i test e stampa i risultati
+void runAllTests(std::vector<TestCase>& tests, int batch_size) {
+    int tests_passed = 0;
+    int tests_failed = 0;
+    
+    for (auto& test : tests) {
+        runTest(test, batch_size);
+        if (test.actual_result == test.expected_result) {
+            tests_passed++;
+        } else {
+            tests_failed++;
+        }
+    }
+    
+    std::cout << "\n===== TEST RESULTS =====\n";
+    std::cout << "Total tests: " << tests.size() << std::endl;
+    std::cout << "Passed: " << tests_passed << std::endl;
+    std::cout << "Failed: " << tests_failed << std::endl;
+    
+    if (tests_failed > 0) {
+        std::cout << "\nFailed tests:\n";
+        for (const auto& test : tests) {
+            if (test.actual_result != test.expected_result) {
+                std::cout << "  - " << test.name << ": Expected " 
+                          << (test.expected_result ? "ACCEPT" : "REJECT")
+                          << ", got " << (test.actual_result ? "ACCEPT" : "REJECT") << std::endl;
+            }
+        }
+    }
+    
+    // Calcola il tempo medio di esecuzione
+    double total_time = 0.0;
+    for (const auto& test : tests) {
+        total_time += test.execution_time;
+    }
+    std::cout << "\nAverage execution time: " << (total_time / tests.size()) << " ms" << std::endl;
+    std::cout << "Batch size: " << batch_size << " (GPU mode with CUDA optimization)" << std::endl;
+}
 
 // Parse command line arguments
 void parseArgs(int argc, char* argv[], std::string& regex, std::string& input, int& batch_size) {
@@ -48,8 +264,8 @@ void printUsage() {
     std::cout << "  --input=STRING      Set the input string to test\n";
     std::cout << "  --batch-size=N      Set the batch size for performance testing\n";
     std::cout << "  --test-file=FILE    Run tests from a test file\n";
-    std::cout << "  --benchmark         Run in benchmark mode\n";
     std::cout << "  --help              Display this help message\n";
+    std::cout << "\nNote: All tests are run in GPU-optimized mode by default\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -60,7 +276,6 @@ int main(int argc, char* argv[]) {
         int batch_size = 1;
         std::string test_file = "";
         bool run_tests = false;
-        bool benchmark_mode = false;
         bool show_help = false;
         
         // Parse command line arguments
@@ -84,9 +299,6 @@ int main(int argc, char* argv[]) {
                 test_file = arg.substr(12);
                 run_tests = true;
             }
-            else if (arg == "--benchmark") {
-                benchmark_mode = true;
-            }
             else if (arg == "--help") {
                 show_help = true;
             }
@@ -105,13 +317,9 @@ int main(int argc, char* argv[]) {
         
         // Se è specificato un file di test, esegui i test
         if (run_tests) {
-            TestManager testManager;
-            if (testManager.loadTestsFromFile(test_file)) {
-                if (benchmark_mode) {
-                    testManager.setBenchmarkMode(true, batch_size);
-                }
-                testManager.runAllTests();
-                testManager.printResults();
+            std::vector<TestCase> tests;
+            if (loadTestsFromFile(test_file, tests)) {
+                runAllTests(tests, batch_size);
                 return 0;
             } else {
                 return 1;
@@ -121,6 +329,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Regex: " << regex << std::endl;
         std::cout << "Testing string: " << input << std::endl;
         std::cout << "Batch size: " << batch_size << std::endl;
+        std::cout << "Mode: GPU-optimized CUDA (default)" << std::endl;
 
         // Converti la regex in FSA
         std::cout << "Step 1: Converting regex to FSA..." << std::endl;

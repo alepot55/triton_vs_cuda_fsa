@@ -264,9 +264,102 @@ std::vector<bool> FSAEngine::runBatchOnGPU(const FSA& fsa, const std::vector<std
     }
     
     try {
-        // ...existing code...
-        // The entire implementation stays the same as before
-        // ...existing code...
+        // Prepare the GPU DFA
+        GPUDFA gpu_dfa = prepareGPUDFA(fsa);
+        
+        // Calculate total size needed for all strings
+        size_t total_chars = 0;
+        for (const auto& s : inputs) {
+            total_chars += s.length();
+        }
+        
+        // Prepare host data
+        std::vector<char> all_strings(total_chars);
+        std::vector<int> string_lengths(inputs.size());
+        std::vector<int> string_offsets(inputs.size());
+        
+        // Fill input data
+        size_t offset = 0;
+        for (size_t i = 0; i < inputs.size(); i++) {
+            string_offsets[i] = offset;
+            string_lengths[i] = inputs[i].length();
+            
+            if (!inputs[i].empty()) {
+                std::copy(inputs[i].begin(), inputs[i].end(), all_strings.begin() + offset);
+                offset += inputs[i].length();
+            }
+        }
+        
+        // Allocate device memory
+        char* d_strings;
+        int* d_lengths;
+        int* d_offsets;
+        char* d_results;
+        GPUDFA* d_dfa;
+        
+        cudaMalloc(&d_strings, all_strings.size());
+        cudaMalloc(&d_lengths, string_lengths.size() * sizeof(int));
+        cudaMalloc(&d_offsets, string_offsets.size() * sizeof(int));
+        cudaMalloc(&d_results, inputs.size() * sizeof(char));
+        cudaMalloc(&d_dfa, sizeof(GPUDFA));
+        
+        // Copy data to device
+        cudaMemcpy(d_strings, all_strings.data(), all_strings.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice);
+        
+        // Launch kernel
+        int block_size = BLOCK_SIZE;
+        int grid_size = (inputs.size() + block_size - 1) / block_size;
+        
+        // Check if all strings are the same length for optimization
+        bool same_length = true;
+        int first_length = inputs[0].length();
+        for (size_t i = 1; i < inputs.size(); i++) {
+            if (inputs[i].length() != static_cast<size_t>(first_length)) {
+                same_length = false;
+                break;
+            }
+        }
+        
+        // Choose the appropriate kernel based on input characteristics
+        if (same_length) {
+            // Use the fixed length kernel for better performance
+            fsa_kernel_fixed_length<<<grid_size, block_size>>>(d_dfa, d_strings, first_length, inputs.size(), d_results);
+        } else {
+            // Use the variable length kernel
+            fsa_kernel_batch<<<grid_size, block_size>>>(d_dfa, d_strings, d_lengths, d_offsets, inputs.size(), d_results);
+        }
+        
+        // Synchronize to ensure completion
+        cudaDeviceSynchronize();
+        
+        // Check for errors
+        cudaError_t error = cudaGetLastError();
+        if (error != cudaSuccess) {
+            std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+            throw std::runtime_error("CUDA execution failed");
+        }
+        
+        // Retrieve results
+        std::vector<char> results(inputs.size());
+        cudaMemcpy(results.data(), d_results, inputs.size() * sizeof(char), cudaMemcpyDeviceToHost);
+        
+        // Convert to boolean vector
+        std::vector<bool> bool_results(inputs.size());
+        for (size_t i = 0; i < inputs.size(); i++) {
+            bool_results[i] = (results[i] != 0);
+        }
+        
+        // Free device memory
+        cudaFree(d_strings);
+        cudaFree(d_lengths);
+        cudaFree(d_offsets);
+        cudaFree(d_results);
+        cudaFree(d_dfa);
+        
+        return bool_results;
     } catch (const std::exception& e) {
         std::cerr << "Error in runBatchOnGPU: " << e.what() << std::endl;
         // Return empty vector on error

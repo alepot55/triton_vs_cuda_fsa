@@ -1,28 +1,48 @@
-NVCC := nvcc  # Changed to just 'nvcc' - assuming it's in PATH
+CXX = g++
+NVCC = nvcc
+CXXFLAGS = -std=c++11 -Wall -Wextra -O2
+NVCCFLAGS = -g -G -arch=sm_70 -I../common/include -I./src
+LDFLAGS =
 
-# Flags di compilazione
-NVCCFLAGS := -g -G -arch=sm_70 -I../common/include -I./src # Adatta l'architettura GPU (es: sm_70 per RTX 20xx, sm_80 per A100, ecc.)
+COMMON_DIR = ../common
+SRC_DIR = ./src
+BENCH_DIR = ./benchmarks
+OBJ_DIR = ./obj
 
-# File sorgente e eseguibile
-SRC_FILES := src/fsa_engine.cu src/test_manager.cu benchmarks/benchmark_fsa.cu ../common/src/regex_conversion.cpp
-EXECUTABLE := fsa_engine_cuda
+# Create obj directory if it doesn't exist
+$(shell mkdir -p $(OBJ_DIR))
 
-OBJECTS := $(SRC_FILES:.cu=.o) $(SRC_FILES:.cpp=.o) # Create object files from source files
+# Define source files
+COMMON_SRC = $(COMMON_DIR)/src/regex_conversion.cpp
+SRC_FILES = $(SRC_DIR)/fsa_engine.cu $(BENCH_DIR)/benchmark_fsa.cu
 
-all: $(EXECUTABLE)
+# Define object files
+COMMON_OBJS = $(OBJ_DIR)/regex_conversion.o
+CUDA_OBJS = $(OBJ_DIR)/fsa_engine.o $(OBJ_DIR)/benchmark_fsa.o
 
-$(EXECUTABLE): $(OBJECTS) # Link object files to create executable
-	$(NVCC) $(NVCCFLAGS) -o $@ $^
+# Define the target executable
+TARGET = fsa_engine_cuda
 
-%.o: %.cu # Rule to compile .cu files to .o object files
+# Default target
+all: $(TARGET)
+
+# Link the final executable
+$(TARGET): $(COMMON_OBJS) $(CUDA_OBJS)
+	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) -o $@ $^
+
+# Compile common C++ code
+$(OBJ_DIR)/regex_conversion.o: $(COMMON_SRC)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-%.o: %.cpp
+# Compile CUDA code
+$(OBJ_DIR)/fsa_engine.o: $(SRC_DIR)/fsa_engine.cu
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-# Compile rule for test_manager.cu
-src/test_manager.o: src/test_manager.cu src/test_manager.h
+$(OBJ_DIR)/benchmark_fsa.o: $(BENCH_DIR)/benchmark_fsa.cu
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
+# Clean rule
 clean:
-	rm -f $(EXECUTABLE) $(OBJECTS) # Clean object files as well
+	rm -rf $(OBJ_DIR)/*.o $(TARGET)
+
+.PHONY: all clean

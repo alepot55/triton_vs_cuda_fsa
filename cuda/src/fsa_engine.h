@@ -28,6 +28,8 @@ struct GPUDFA {
     bool accepting_states[MAX_STATES];
 };
 
+// Forward declaration for CUDA kernels - conditionally defined
+#ifdef __CUDACC__
 // Forward declaration for CUDA kernels
 __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* output);
 __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings, 
@@ -35,6 +37,15 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
                               int num_strings, char* results);
 __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_strings, 
                                      int string_length, int num_strings, char* results);
+#else
+// Non-CUDA compilation - just declare function prototypes without __global__
+void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* output);
+void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings, 
+                   const int* string_lengths, const int* string_offsets,
+                   int num_strings, char* results);
+void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_strings, 
+                          int string_length, int num_strings, char* results);
+#endif
 
 // Forward declaration for CUDA utility functions
 CUDAFSA convertToCUDAFSA(const FSA& fsa);
@@ -48,7 +59,7 @@ public:
     // Esegue il DFA su una stringa di input (CPU)
     static bool runDFA(const FSA& fsa, const std::string& input);
     
-    // Esegui un batch di stringhe in parallelo su GPU
+    // Esegui un batch di stringhe in parallelo su GPU (sempre ottimizzato per CUDA)
     static std::vector<bool> runBatchOnGPU(const FSA& fsa, const std::vector<std::string>& inputs);
     
     // Prepara un DFA per esecuzione su GPU
