@@ -1,0 +1,27 @@
+# File di test di base per FSA Engine
+
+[Test1_EndsWith1]
+regex = (0|1)*1
+input = 0101
+expect = true
+
+[Test2_EndsWith0]
+regex = (0|1)*0
+input = 0100
+expect = true
+
+[Test3_EndsWith1_Negative]
+regex = (0|1)*1
+input = 0100
+expect = false
+
+[Test4_BinaryMultipleOf6]
+# Accetta stringhe binarie la cui lunghezza è 6 o multiplo di 6
+regex = (01|10|00|11){3}(01|10|00|11)*
+input = 010111
+expect = true
+
+[Test5_BinaryMultipleOf6_Negative]
+regex = (01|10|00|11){3}(01|10|00|11)*
+input = 0101
+expect = false
