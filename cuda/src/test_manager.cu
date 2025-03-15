@@ -18,7 +18,7 @@ bool TestManager::loadTestsFromFile(const std::string& filename) {
     
     while (std::getline(file, line)) {
         // Ignora linee vuote e commenti
-        if (line.empty() || line[0] == '#') {
+        if (line.empty() || line[0] == '#') { 
             continue;
         }
         
