@@ -1,0 +1,63 @@
+# Performance test cases for FSA Engine
+# Designed for benchmarking different regex patterns
+
+[Perf_SimplePattern_Small]
+regex = (0|1)*1
+input = 01010101011111
+expect = true
+
+[Perf_SimplePattern_Medium]
+regex = (0|1)*1
+input = 0101010101111101010101010101010101010111
+expect = true
+
+[Perf_SimplePattern_Large]
+regex = (0|1)*1
+input = 010101010111110101010101010101010101011101010101010101010101010101010101010101
+expect = true
+
+[Perf_ComplexPattern_Small]
+regex = ((0|1)(0|1)(0|1))*1(0|1)*(00|11)
+input = 010101010101111100
+expect = true
+
+[Perf_ComplexPattern_Medium]
+regex = ((0|1)(0|1)(0|1))*1(0|1)*(00|11)
+input = 0101010101011111000101010101010101010101111100
+expect = true
+
+[Perf_ComplexPattern_Large]
+regex = ((0|1)(0|1)(0|1))*1(0|1)*(00|11)
+input = 010101010101111100010101010101010101010111110001010101010101010101010101111100
+expect = true
+
+[Perf_BacktrackHeavy_Small]
+# Patterns that potentially cause heavy backtracking
+regex = (0|1)*00(0|1)*11(0|1)*
+input = 0001010101111
+expect = true
+
+[Perf_BacktrackHeavy_Medium]
+regex = (0|1)*00(0|1)*11(0|1)*
+input = 000101010111101010101000111010101
+expect = true
+
+[Perf_BacktrackHeavy_Large]
+regex = (0|1)*00(0|1)*11(0|1)*
+input = 00010101011110101010100011101010101010101000101010101111010101010001110101010101
+expect = true
+
+[Perf_RepeatedGroups_Small]
+regex = (01|10|00|11){5}(01|10|00|11)*
+input = 0101100011100110
+expect = true
+
+[Perf_RepeatedGroups_Medium]
+regex = (01|10|00|11){10}(01|10|00|11)*
+input = 01011000111001101010010110001110
+expect = true
+
+[Perf_RepeatedGroups_Large]
+regex = (01|10|00|11){15}(01|10|00|11)*
+input = 0101100011100110101001011000111001011000111001101010010110001110
+expect = true
