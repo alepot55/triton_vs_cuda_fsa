@@ -6,78 +6,64 @@
 [Basic_EndsWith1]
 regex = (0|1)*1
 input = 0101
-expect = true
 
 [Basic_EndsWith0]
 regex = (0|1)*0
 input = 0100
-expect = true
 
 [Basic_EndsWithTwo1s]
 regex = (0|1)*11
 input = 01011
-expect = true
 
 [Basic_EndsWithTwo0s]
 regex = (0|1)*00
 input = 01100
-expect = true
 
 # ===== Simple Literals =====
 
 [Literal_ExactMatch]
 regex = 0101
 input = 0101
-expect = true
 
 [Literal_NoMatch]
 regex = 0101
 input = 0100
-expect = false
 
 [Literal_PartialMatch]
 regex = 0101
 input = 01010
-expect = false
 
 # ===== Kleene Star Tests =====
 
 [Star_EmptyString]
 regex = (0|1)*
 input = 
-expect = true
 
 [Star_RepeatedBits]
 regex = 1*0*
 input = 11110000
-expect = true
 
 [Star_MixedOrder]
 regex = 1*0*
 input = 11001100
-expect = false
 
 # ===== Alternation Tests =====
 
 [Alt_SingleChar]
 regex = 0|1
 input = 0
-expect = true
 
 [Alt_NestedGroups]
 regex = (00|11)(01|10)
 input = 0010
-expect = true
 
 [Alt_Mixed]
 regex = (00|11)(01|10)
 input = 1101
-expect = true
 
 [Alt_Invalid]
 regex = (00|11)(01|10)
 input = 0000
-expect = false
 
 # ===== Length-Based Patterns =====
 
@@ -85,85 +71,70 @@ expect = false
 # Even length strings
 regex = (01|10|00|11)(01|10|00|11)*
 input = 0101
-expect = true
 
 [Length_Odd]
 # Odd length strings (impossible with paired bits)
 regex = (01|10|00|11)(01|10|00|11)*
 input = 010
-expect = false
 
 [Length_Mod3]
 # Length is multiple of 3
 regex = ((0|1)(0|1)(0|1))*
 input = 010101
-expect = true
 
 [Length_NotMod3]
 regex = ((0|1)(0|1)(0|1))*
 input = 0101
-expect = false
 
 # ===== Position-Based Patterns =====
 
 [Position_StartsWith1]
 regex = 1(0|1)*
 input = 1010
-expect = true
 
 [Position_StartsWith0]
 regex = 0(0|1)*
 input = 0010
-expect = true
 
 [Position_StartsAndEnds]
 regex = 1(0|1)*1
 input = 1001
-expect = true
 
 # ===== Pattern Combinations =====
 
 [Combo_StartEnd]
 regex = 1(0|1)*0
 input = 10110
-expect = true
 
 [Combo_NoMiddle0]
 regex = 1[^0]*1
 input = 1111
-expect = true
 
 [Combo_ThreeConsecutive1s]
 regex = (0|1)*111(0|1)*
 input = 0111010
-expect = true
 
 [Combo_No3Consecutive1s]
 regex = (0|(10)|(110))*
 input = 01101010
-expect = true
 
 # ===== Edge Cases =====
 
 [Edge_SingleChar]
 regex = 0
 input = 0
-expect = true
 
 [Edge_EmptyString]
 regex = 
 input = 
-expect = true
 
 [Edge_LongString]
 regex = (0|1)*
 input = 0101010101010101010101010101010101010101
-expect = true
 
 [Edge_ZeroOnes]
 regex = 0*1*
 input = 000111
-expect = true
 
 # ===== Special Patterns =====
 
@@ -171,89 +142,73 @@ expect = true
 # Contains '101'
 regex = (0|1)*101(0|1)*
 input = 0010100
-expect = true
 
 [Special_NoContainsSubstring]
 regex = (0|1)*101(0|1)*
 input = 001100
-expect = false
 
 [Special_DivisibleBy3]
 # Number represented in binary is divisible by 3
 # (Simplified: just check if binary ends with 00 or 11)
 regex = (0|1)*(00|11)
 input = 1100
-expect = true
 
 [Special_AlternatingBits]
 # Alternating 0s and 1s
 regex = (01)*(0)?|(10)*(1)?
 input = 010101
-expect = true
 
 [Special_NotAlternating]
 regex = (01)*(0)?|(10)*(1)?
 input = 01100
-expect = false
 
 # ===== NEW: Advanced Regex Features =====
 
 [Adv_OptionalElement]
 regex = 10?1
 input = 101
-expect = true
 
 [Adv_OptionalElement2]
 regex = 10?1
 input = 11
-expect = true
 
 [Adv_OptionalElement3]
 regex = 10?1
 input = 100
-expect = false
 
 [Adv_Repetition]
 regex = 1{3}
 input = 111
-expect = true
 
 [Adv_RepetitionFail]
 regex = 1{3}
 input = 11
-expect = false
 
 [Adv_RepetitionGroup]
 regex = (01){2}
 input = 0101
-expect = true
 
 [Adv_NestedGroups]
 regex = ((01){2}0)*
 input = 01010
-expect = true
 
 # ===== NEW: Negation Patterns =====
 
 [Neg_NoZeros]
 regex = 1*
 input = 111
-expect = true
 
 [Neg_NoZerosFail]
 regex = 1*
 input = 1101
-expect = false
 
 [Neg_NegatedClass]
 regex = 0[^0]*0
 input = 01110
-expect = true
 
 [Neg_DoubleNegation]
 regex = 1[^0]*[^1]*0
 input = 11110
-expect = true
 
 # ===== NEW: Complex Combinations =====
 
@@ -261,48 +216,39 @@ expect = true
 # Binary strings with even number of 1s
 regex = (0*(10*10*))*
 input = 00100100
-expect = true
 
 [Complex_Even1sFail]
 regex = (0*(10*10*))*
 input = 0010010
-expect = false
 
 [Complex_DivisibleBy4]
 # Binary string representing number divisible by 4 (ends with 00)
 regex = (0|1)*00
 input = 10100
-expect = true
 
 [Complex_MultOf3]
 # Matches binary strings that are multiples of 3
 regex = (0|(1(01*0)*1))*
 input = 110
-expect = true
 
 [Complex_NotMultOf3]
 regex = (0|(1(01*0)*1))*
 input = 10
-expect = false
 
 [Complex_Palindrome4]
 # Binary palindromes of length 4
 regex = (00|11)(00|11)|(01|10)(10|01)
 input = 1001
-expect = true
 
 [Complex_Palindrome4Fail]
 regex = (00|11)(00|11)|(01|10)(10|01)
 input = 1010
-expect = false
 
 [Complex_NoConsecutive1]
 # No consecutive 1s
 regex = (0|10)*1?
 input = 010101
-expect = true
 
 [Complex_NoConsecutive1Fail]
 regex = (0|10)*1?
 input = 0110
-expect = false

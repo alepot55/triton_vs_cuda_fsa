@@ -115,13 +115,11 @@ std::string addExplicitConcatenation(const std::string& regex) {
     for (size_t i = 0; i < regex.size(); ++i) {
         result += regex[i];
         if (i + 1 < regex.size()) {
-            bool currIsOperand = (isalnum(regex[i]) || regex[i] == ')' || regex[i] == '*' || regex[i] == '?');
-            bool nextIsOperand = (isalnum(regex[i + 1]) || regex[i + 1] == '(');
-
-            // Insert concatenation ONLY if the current is an operand and the next is an operand,
-            // OR if the current is a closing parenthesis and the next is an operand.
-            if ((currIsOperand && nextIsOperand) || (regex[i] == ')' && nextIsOperand)) {
+            if ((isalnum(regex[i]) || regex[i] == ')' || regex[i] == '*' || regex[i] == '?' || regex[i] == '}') &&
+                (isalnum(regex[i + 1]) || regex[i + 1] == '(' || regex[i+1] == '[')) {
                 result += '.';
+            } else if (regex[i] == ']' && (isalnum(regex[i+1]) || regex[i+1] == '(')) {
+                 result += '.';
             }
         }
     }
@@ -140,36 +138,43 @@ std::string expandRepetition(const std::string &regex) {
             }
             std::string numStr = regex.substr(i+1, close - i - 1);
             int count = std::stoi(numStr);
+            if (count < 0) {
+                throw std::runtime_error("Invalid repetition count: " + numStr);
+            }
+
             // Determine the operand preceding '{'
             std::string operand;
-            if (!result.empty() && result.back() == ')') {
-                // Find matching '(' in result (assume well-formed)
-                int paren = 0;
-                size_t pos = result.size()-1;
-                for (; pos < result.size(); pos--) {
-                    if (result[pos] == ')')
-                        paren++;
-                    else if (result[pos] == '(') {
-                        paren--;
-                        if (paren == 0)
+            if (i > 0 && result.length() > 0) {
+                if (result.back() == ')') {
+                    // Find matching '(' in result
+                    int depth = 1;
+                    size_t pos = result.size() - 1;
+                    while (pos > 0 && depth > 0) {
+                        if (result[pos] == ')')
+                            depth++;
+                        else if (result[pos] == '(')
+                            depth--;
+                        pos--;
+                        if (depth == 0)
                             break;
                     }
-                }
-                if (pos == std::string::npos) {
-                    throw std::runtime_error("Mismatched parentheses for repetition");
-                }
-                operand = result.substr(pos);
-                result.erase(pos);
-            } else {
-                // Use the last character as operand
-                if (!result.empty()) {
-                    operand = result.substr(result.size()-1);
-                    result.erase(result.size()-1);
+                    if (pos >= 0) {
+                        pos++; // Adjust to the opening parenthesis
+                        operand = result.substr(pos);
+                        result.erase(pos);
+                    } else {
+                        throw std::runtime_error("Mismatched parentheses for repetition");
+                    }
                 } else {
-                    throw std::runtime_error("No operand for repetition operator");
+                    // Use the last character as operand
+                    operand = result.substr(result.size()-1);
+                    result.pop_back();
                 }
+            } else {
+                throw std::runtime_error("No operand for repetition operator");
             }
-            // Append operand count times (already one copy exists; here we add count copies)
+
+            // Append operand count times
             for (int j = 0; j < count; j++) {
                 result += operand;
             }
@@ -179,6 +184,126 @@ std::string expandRepetition(const std::string &regex) {
         }
     }
     return result;
+}
+
+// Improved preprocessRegex to handle negated classes, repetition, and optional operators
+std::string preprocessRegex(const std::string &regex) {
+    clearDebugOutput(); // Reset debug output
+    std::string out;
+    addDebug("Original regex: " + regex);
+    
+    for (size_t i = 0; i < regex.size(); ) {
+        // Negated character classes: convert [^0] into (1) (not 0 means 1 in binary)
+        if (i + 3 < regex.size() && regex[i]=='[' && regex[i+1]=='^' &&
+            (regex[i+2]=='0' || regex[i+2]=='1') && regex[i+3]==']') {
+            
+            char operand = regex[i+2];
+            char replacement = (operand=='0') ? '1' : '0';
+            
+            // Handle [^0]* pattern with correct grouping
+            if (i + 4 < regex.size() && regex[i+4] == '*') {
+                out += "(";
+                out.push_back(replacement);
+                out += ")*";
+                addDebug("Replaced [^" + std::string(1, operand) + "]* with (" + std::string(1, replacement) + ")*");
+                i += 5; // Skip the entire [^x]*
+            } else {
+                out += "(";
+                out.push_back(replacement);
+                out += ")";
+                addDebug("Replaced [^" + std::string(1, operand) + "] with (" + std::string(1, replacement) + ")");
+                i += 4;
+            }
+        }
+        // Handle optional operator '?' by converting to alternation (a|ε)
+        else if (i > 0 && regex[i] == '?') {
+            // If preceding char is ')', find the matching '('
+            if (i > 0 && regex[i-1] == ')') {
+                int balance = 1;
+                size_t j = i - 2;
+                while (j < regex.size() && balance > 0) { // j is unsigned, so check for underflow
+                    if (regex[j] == ')')
+                        balance++;
+                    else if (regex[j] == '(')
+                        balance--;
+                    if (balance == 0)
+                        break;
+                    if (j == 0)
+                        break;
+                    j--;
+                }
+                
+                if (balance == 0) {
+                    std::string group = regex.substr(j, i - j);
+                    out = out.substr(0, out.size() - group.size()) + "(" + group + "|)";
+                    addDebug("Replaced group " + group + "? with (" + group + "|)");
+                }
+            } else {
+                // Regular case - replace 'a?' with '(a|)'
+                char prev = out.back();
+                out.pop_back();
+                out += "(" + std::string(1, prev) + "|)";
+                addDebug("Replaced '" + std::string(1, prev) + "?' with (" + std::string(1, prev) + "|)");
+            }
+            i++;
+        }
+        // Handle repetition {n} - leave for expandRepetition function
+        else if (i > 0 && regex[i] == '{') {
+            size_t close = regex.find('}', i);
+            if (close != std::string::npos) {
+                std::string countStr = regex.substr(i+1, close-i-1);
+                int count = std::stoi(countStr);
+                addDebug("Found repetition {" + countStr + "}");
+                
+                // If the preceding character is ')', find the matching '('
+                if (i > 0 && regex[i-1] == ')') {
+                    int balance = 1;
+                    size_t j = i - 2;
+                    while (j < regex.size() && balance > 0) {
+                        if (regex[j] == ')')
+                            balance++;
+                        else if (regex[j] == '(')
+                            balance--;
+                        if (balance == 0)
+                            break;
+                        if (j == 0)
+                            break;
+                        j--;
+                    }
+                    
+                    if (balance == 0) {
+                        std::string group = regex.substr(j, i - j);
+                        // Repeat the group 'count' times
+                        std::string repeated;
+                        for (int k = 0; k < count; k++) {
+                            repeated += group;
+                        }
+                        // Replace the group{count} with the repeated group
+                        out = out.substr(0, out.size() - group.size()) + repeated;
+                        addDebug("Expanded " + group + "{" + countStr + "} to " + repeated);
+                    }
+                } else {
+                    // Single character repetition
+                    char prev = out.back();
+                    out.pop_back();
+                    for (int k = 0; k < count; k++) {
+                        out += prev;
+                    }
+                    addDebug("Expanded " + std::string(1, prev) + "{" + countStr + "} to " + std::string(count, prev));
+                }
+                i = close + 1;
+            } else {
+                addDebug("Malformed repetition at position " + std::to_string(i));
+                out.push_back(regex[i++]);
+            }
+        }
+        else {
+            out.push_back(regex[i++]);
+        }
+    }
+    
+    addDebug("After preprocessing: " + out);
+    return out;
 }
 
 // Thompson's Construction Algorithm for regex to NFA
@@ -317,106 +442,15 @@ NFA createLiteralNFA(const std::string& literal) {
     return nfa;
 }
 
-// Improved preprocessRegex to handle negated classes, repetition, and optional operators
-std::string preprocessRegex(const std::string &regex) {
-    clearDebugOutput(); // Reset debug output
-    std::string out;
-    addDebug("Original regex: " + regex);
-    
-    for (size_t i = 0; i < regex.size(); ) {
-        // Negated character classes: convert [^0] into ((1)) 
-        if (i + 3 < regex.size() && regex[i]=='[' && regex[i+1]=='^' &&
-            (regex[i+2]=='0' || regex[i+2]=='1') && regex[i+3]==']') {
-            
-            char operand = regex[i+2];
-            char replacement = (operand=='0') ? '1' : '0';
-            
-            // If a Kleene star follows, output grouped version to enforce proper operator precedence.
-            if (i + 4 < regex.size() && regex[i+4] == '*') {
-                out += "((";
-                out.push_back(replacement);
-                out += ")*)";
-                addDebug("Replaced [^" + std::string(1, operand) + "]* with ((replacement))*");
-                i += 5; // Skip the entire [^x]*
-            } else {
-                // Otherwise, just substitute with its complement
-                out.push_back(replacement);
-                addDebug("Replaced [^" + std::string(1, operand) + "] with ((replacement))");
-                i += 4;
-            }
-        }
-        // Handle repetition {n}
-        else if (i + 2 < regex.size() && regex[i] == '{' && isdigit(regex[i+1])) {
-            size_t close = regex.find('}', i);
-            if (close != std::string::npos) {
-                std::string countStr = regex.substr(i+1, close-i-1);
-                int count = std::stoi(countStr);
-                addDebug("Found repetition {" + countStr + "}");
-                std::string operand;
-                // If the char before '{' is a closing parenthesis, extract the entire group.
-                if (!out.empty() && out.back() == ')') {
-                    int depth = 1;
-                    size_t j = out.size() - 2; // start before last ')'
-                    while (j < out.size() && depth > 0) { // j is unsigned so check for underflow using condition j < out.size()
-                        if (out[j] == ')')
-                            depth++;
-                        else if (out[j] == '(')
-                            depth--;
-                        if(depth == 0) break;
-                        if(j==0) break;
-                        j--;
-                    }
-                    size_t groupStart = j;
-                    operand = out.substr(groupStart);
-                    // Remove the extracted group from out
-                    out.erase(groupStart);
-                } else if (!out.empty()) {
-                    // Single character operand
-                    operand = std::string(1, out.back());
-                    out.pop_back();
-                }
-                // Append operand exactly count times
-                for (int j = 0; j < count; j++) {
-                    out += operand;
-                }
-                i = close + 1;
-            } else {
-                addDebug("Malformed repetition at position " + std::to_string(i));
-                out.push_back(regex[i++]);
-            }
-        }
-        // Handle optional operator '?'
-        else if (i < regex.size() && regex[i] == '?') {
-            size_t pos = out.rfind('(');
-            if (pos != std::string::npos) {
-                std::string group = out.substr(pos);
-                out.erase(pos);
-                out += "(" + group + "|)";
-                addDebug("Replaced group " + group + "? with (" + group + "|)");
-            } else if (!out.empty()) {
-                char prev = out.back();
-                out.pop_back();
-                out += "(" + std::string(1, prev) + "|)";
-                addDebug("Replaced '" + std::string(1, prev) + "?' with '(" + std::string(1, prev) + "|)'");
-            }
-            i++;
-        }
-        else {
-            out.push_back(regex[i++]);
-        }
-    }
-    
-    addDebug("After preprocessing: " + out);
-    return out;
-}
-
 // Fix the postfix evaluation to handle more complex expressions
 NFA regexToNFA(const std::string& regex) {
     clearDebugOutput(); // Reset debug output
     
     std::string preprocessed = preprocessRegex(regex); // Preprocessing added
     conversionDebugLog += "DEBUG: Preprocessed regex: " + preprocessed + "\n";
-    std::string expanded = expandRepetition(preprocessed);
+    
+    // No need for expandRepetition here, as it's handled in preprocessRegex
+    std::string expanded = preprocessed;
     conversionDebugLog += "DEBUG: Expanded regex: " + expanded + "\n";
 
     addDebug("Expanded regex: " + expanded);
@@ -472,6 +506,12 @@ NFA regexToNFA(const std::string& regex) {
                     } else {
                         addDebug("ERROR: Mismatched parentheses - missing (");
                     }
+                } else if (c == '?') {
+                     while (!operators.empty() && operators.top() != '(' && operators.top() != '|') {
+                        postfix += operators.top();
+                        operators.pop();
+                    }
+                    operators.push(c);
                 } else {
                     int precedence = getPrecedence(c);
                     addDebug("Operator " + std::string(1, c) + " with precedence " + std::to_string(precedence));
@@ -531,6 +571,9 @@ NFA regexToNFA(const std::string& regex) {
                     NFA right = nfaStack.top(); nfaStack.pop();
                     NFA left = nfaStack.top(); nfaStack.pop();
                     nfaStack.push(alternateNFAs(left, right));
+                }
+             else {
+                    throw std::runtime_error("Unsupported operator in postfix conversion");
                 }
             } else {
                 // Push NFA for literal token (or call createLiteralNFA)

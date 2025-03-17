@@ -20,10 +20,13 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
         char c = input_string[i];
         int symbol = -1;
         
-        // Support only binary alphabet (0,1)
+        // Character to symbol mapping - in binary alphabet:
+        // Character '0' maps to symbol 0, character '1' maps to symbol 1
+        // This must match the regex engine's symbol mapping
         if (c == '0') symbol = 0;
         else if (c == '1') symbol = 1;
         else {
+            // Invalid character in binary alphabet
             output[thread_id] = false;
             return;
         }
@@ -80,6 +83,7 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
         char c = input_strings[offset + i];
         int symbol;
         
+        // Character to symbol mapping - match the regex engine
         if (c == '0') symbol = 0;
         else if (c == '1') symbol = 1;
         else {
@@ -128,6 +132,7 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
         char c = input_strings[offset + i];
         int symbol;
         
+        // Character to symbol mapping - match the regex engine
         if (c == '0') symbol = 0;
         else if (c == '1') symbol = 1;
         else {
@@ -423,46 +428,10 @@ void debugFSA(const FSA& /*fsa*/, const std::string& /*input*/) {}
 
 // Clean up the runSingleTest function
 bool FSAEngine::runSingleTest(const std::string& regex, const std::string& input) {
-    // This function was previously trying to handle complex patterns with CPU fallback
-    // but there are still issues with the regex to DFA conversion
-    
-    // Special cases: Check for the failing test patterns directly
-    if (regex == "(01)*(0)?|(10)*(1)?") {
-        // Special_NotAlternating pattern
-        // Check if input is alternating 0 and 1, possibly ending with a trailing 0 or 1
-        if (input.empty()) return true;
-        for (size_t i = 1; i < input.length(); i++) {
-            if (input[i] == input[i-1]) return false;
-        }
-        return true;
-    } else if (regex == "10?1") {
-        // Adv_OptionalElement3 pattern
-        // Should match "101" or "11" but not "100"
-        return (input == "101" || input == "11");
-    } else if (regex == "(0*(10*10*))*" && input == "0010010") {
-        // Complex_Even1sFail pattern (specialized case)
-        return false;
-    } else if (regex == "(00|11)(00|11)|(01|10)(10|01)" && input == "1010") {
-        // Complex_Palindrome4Fail pattern (specialized case)
-        return false;
-    } else if (regex == "(0|10)*1?" && input == "0110") {
-        // Complex_NoConsecutive1Fail pattern (specialized case)
-        return false;
-    }
-    
-    // For all other patterns, proceed with the normal implementation
+    // Convert regex to FSA
     FSA fsa = regexToDFA(regex);
     
-    // Use CPU evaluation for all problematic regex patterns
-    if (regex.find("[^") != std::string::npos ||    // Negated character class
-        regex.find("?") != std::string::npos ||     // Optional elements
-        regex.find("{") != std::string::npos ||     // Repetition counts
-        regex.find("*") != std::string::npos ||     // Kleene star
-        regex.find("|") != std::string::npos) {     // Any alternation
-        return FSAEngine::runDFA(fsa, input);
-    }
-    
-    // Use GPU only for very simple patterns
+    // Process all regex patterns using CUDA
     CUDAFSA cuda_fsa = convertToCUDAFSA(fsa);
     std::vector<std::string> inputs = {input};
     bool result = false;
