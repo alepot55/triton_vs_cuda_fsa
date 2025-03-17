@@ -195,3 +195,114 @@ expect = true
 regex = (01)*(0)?|(10)*(1)?
 input = 01100
 expect = false
+
+# ===== NEW: Advanced Regex Features =====
+
+[Adv_OptionalElement]
+regex = 10?1
+input = 101
+expect = true
+
+[Adv_OptionalElement2]
+regex = 10?1
+input = 11
+expect = true
+
+[Adv_OptionalElement3]
+regex = 10?1
+input = 100
+expect = false
+
+[Adv_Repetition]
+regex = 1{3}
+input = 111
+expect = true
+
+[Adv_RepetitionFail]
+regex = 1{3}
+input = 11
+expect = false
+
+[Adv_RepetitionGroup]
+regex = (01){2}
+input = 0101
+expect = true
+
+[Adv_NestedGroups]
+regex = ((01){2}0)*
+input = 01010
+expect = true
+
+# ===== NEW: Negation Patterns =====
+
+[Neg_NoZeros]
+regex = 1*
+input = 111
+expect = true
+
+[Neg_NoZerosFail]
+regex = 1*
+input = 1101
+expect = false
+
+[Neg_NegatedClass]
+regex = 0[^0]*0
+input = 01110
+expect = true
+
+[Neg_DoubleNegation]
+regex = 1[^0]*[^1]*0
+input = 11110
+expect = true
+
+# ===== NEW: Complex Combinations =====
+
+[Complex_Even1s]
+# Binary strings with even number of 1s
+regex = (0*(10*10*))*
+input = 00100100
+expect = true
+
+[Complex_Even1sFail]
+regex = (0*(10*10*))*
+input = 0010010
+expect = false
+
+[Complex_DivisibleBy4]
+# Binary string representing number divisible by 4 (ends with 00)
+regex = (0|1)*00
+input = 10100
+expect = true
+
+[Complex_MultOf3]
+# Matches binary strings that are multiples of 3
+regex = (0|(1(01*0)*1))*
+input = 110
+expect = true
+
+[Complex_NotMultOf3]
+regex = (0|(1(01*0)*1))*
+input = 10
+expect = false
+
+[Complex_Palindrome4]
+# Binary palindromes of length 4
+regex = (00|11)(00|11)|(01|10)(10|01)
+input = 1001
+expect = true
+
+[Complex_Palindrome4Fail]
+regex = (00|11)(00|11)|(01|10)(10|01)
+input = 1010
+expect = false
+
+[Complex_NoConsecutive1]
+# No consecutive 1s
+regex = (0|10)*1?
+input = 010101
+expect = true
+
+[Complex_NoConsecutive1Fail]
+regex = (0|10)*1?
+input = 0110
+expect = false

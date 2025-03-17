@@ -10,6 +10,14 @@
 #include <unordered_set>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <string>
+
+// Add global debug log for conversion details.
+static std::string conversionDebugLog;
+
+std::string getConversionDebugLog() {
+    return conversionDebugLog;
+}
 
 // ============ Implementazione della conversione da Regex a NFA ============
 
@@ -87,18 +95,17 @@ int getPrecedence(char op) {
 
 #include <cctype>  // for isalnum
 std::string addExplicitConcatenation(const std::string& regex) {
-    std::string result;
-    for (size_t i = 0; i < regex.size(); i++) {
-        char c = regex[i];
-        result.push_back(c);
+    std::string result = "";
+    for (size_t i = 0; i < regex.size(); ++i) {
+        result += regex[i];
         if (i + 1 < regex.size()) {
-            char next = regex[i + 1];
-            // Define an operand as an alphanumeric character, a closing parenthesis, or a quantifier.
-            bool currIsOperand = (isalnum(c) || c == ')' || c == '*' || c == '?');
-            // An operand for the next token is an alphanumeric character or an opening parenthesis.
-            bool nextIsOperand = (isalnum(next) || next == '(');
-            if (currIsOperand && nextIsOperand) {
-                result.push_back('.');
+            bool currIsOperand = (isalnum(regex[i]) || regex[i] == ')' || regex[i] == '*' || regex[i] == '?');
+            bool nextIsOperand = (isalnum(regex[i + 1]) || regex[i + 1] == '(');
+
+            // Insert concatenation ONLY if the current is an operand and the next is an operand,
+            // OR if the current is a closing parenthesis and the next is an operand.
+            if ((currIsOperand && nextIsOperand) || (regex[i] == ')' && nextIsOperand)) {
+                result += '.';
             }
         }
     }
@@ -294,10 +301,74 @@ NFA createLiteralNFA(const std::string& literal) {
     return nfa;
 }
 
+// Add or update preprocessRegex function:
+std::string preprocessRegex(const std::string &regex) {
+    std::string out;
+    for (size_t i = 0; i < regex.size(); ) {
+        // Handle negated character classes [^x]
+        if (i + 3 < regex.size() && regex[i]=='[' && regex[i+1]=='^' &&
+            (regex[i+2]=='0' || regex[i+2]=='1') && regex[i+3]==']') {
+            
+            char operand = regex[i+2];
+            char replacement = (operand=='0') ? '1' : '0';
+            
+            // Check if there's a Kleene star after the character class
+            bool hasKleeneStar = (i + 4 < regex.size() && regex[i+4] == '*');
+            
+            // For negated character classes, explicitly handle symbol replacement
+            out += replacement;
+            
+            // Add Kleene star if it was present
+            if (hasKleeneStar) {
+                out += '*';
+                i += 5; // Skip [^c]*
+            } else {
+                i += 4; // Skip [^c]
+            }
+        } 
+        // Handle question mark (optional) operator
+        else if (i > 0 && regex[i] == '?' && !isOperator(regex[i-1])) {
+            out += '?';
+            i++;
+        }
+        // Handle repetition {n}
+        else if (i + 1 < regex.size() && regex[i] == '{' && isdigit(regex[i+1])) {
+            size_t end = regex.find('}', i);
+            if (end != std::string::npos) {
+                // Process repetition count
+                std::string countStr = regex.substr(i+1, end-i-1);
+                int count = std::stoi(countStr);
+                
+                // Get the operand that is being repeated
+                char operand = out.back();
+                out.pop_back(); // Remove the operand we'll repeat
+                
+                // Replace {n} with n occurrences of the operand
+                for (int j = 0; j < count; j++) {
+                    out += operand;
+                }
+                
+                i = end + 1;
+            } else {
+                out.push_back(regex[i]);
+                i++;
+            }
+        }
+        else {
+            out.push_back(regex[i]);
+            i++;
+        }
+    }
+    return out;
+}
+
+// Modify regexToNFA to call preprocessRegex before expansion:
 NFA regexToNFA(const std::string& regex) {
-    std::string expanded = expandRepetition(regex);
-    std::cout << "Expanded regex: " << expanded << std::endl;
-    
+    std::string preprocessed = preprocessRegex(regex); // Preprocessing added
+    conversionDebugLog += "DEBUG: Preprocessed regex: " + preprocessed + "\n";
+    std::string expanded = expandRepetition(preprocessed);
+    conversionDebugLog += "DEBUG: Expanded regex: " + expanded + "\n";
+
     if (expanded.empty()) {
         NFA emptyNFA;
         int start = emptyNFA.addState();
@@ -327,6 +398,7 @@ NFA regexToNFA(const std::string& regex) {
     try {
         // Add explicit concatenation and convert to postfix as before
         std::string processedRegex = addExplicitConcatenation(expanded);
+        conversionDebugLog += "DEBUG: Regex with explicit concatenation: " + processedRegex + "\n";
         std::stack<char> operators;
         std::string postfix;
         for (char c : processedRegex) {
@@ -358,79 +430,63 @@ NFA regexToNFA(const std::string& regex) {
             postfix += operators.top();
             operators.pop();
         }
-        std::cout << "Postfix: " << postfix << std::endl;
         
-        // ... existing postfix evaluation loop (handling . | * ? etc.)...
+        conversionDebugLog += "DEBUG: Postfix expression: " + postfix + "\n";
         std::stack<NFA> nfaStack;
-        for (char c : postfix) {
-            if (nfaStack.size() > 1000) {
-                throw std::runtime_error("NFA construction error: Stack too deep, regex may be too complex");
-            }
-            if (c == '.') {
-                if (nfaStack.size() < 2) {
-                    throw std::runtime_error("Invalid regex syntax: not enough operands for concatenation");
+        for (char token : postfix) {
+            if (isOperator(token)) {
+                if (token == '*') {
+                    if (nfaStack.empty())
+                        throw std::runtime_error("Invalid regex syntax: not enough operands for Kleene star");
+                    NFA operand = nfaStack.top();
+                    nfaStack.pop();
+                    nfaStack.push(applyKleeneStar(operand));
+                } else if (token == '?') {
+                    if (nfaStack.empty())
+                        throw std::runtime_error("Invalid regex syntax: not enough operands for optional operator");
+                    NFA operand = nfaStack.top();
+                    nfaStack.pop();
+                    nfaStack.push(applyOptional(operand));
+                } else if (token == '.') {
+                    // Concatenation: pop right first, then left,
+                    // then concatenate left followed by right.
+                    if (nfaStack.size() < 2)
+                        throw std::runtime_error("Invalid regex syntax: not enough operands for concatenation");
+                    NFA right = nfaStack.top(); nfaStack.pop();
+                    NFA left = nfaStack.top(); nfaStack.pop();
+                    // Use left-to-right concatenation order!
+                    nfaStack.push(concatenateNFAs(left, right));
+                } else if (token == '|') {
+                    // Alternation: pop right then left, then alternate.
+                    if (nfaStack.size() < 2)
+                        throw std::runtime_error("Invalid regex syntax: not enough operands for alternation");
+                    NFA right = nfaStack.top(); nfaStack.pop();
+                    NFA left = nfaStack.top(); nfaStack.pop();
+                    nfaStack.push(alternateNFAs(left, right));
                 }
-                NFA second = nfaStack.top(); nfaStack.pop();
-                NFA first = nfaStack.top(); nfaStack.pop();
-                nfaStack.push(concatenateNFAs(first, second));
-            } else if (c == '|') {
-                if (nfaStack.size() < 2) {
-                    throw std::runtime_error("Invalid regex syntax: not enough operands for alternation");
-                }
-                NFA second = nfaStack.top(); nfaStack.pop();
-                NFA first = nfaStack.top(); nfaStack.pop();
-                nfaStack.push(alternateNFAs(first, second));
-            } else if (c == '*') {
-                if (nfaStack.empty()) {
-                    throw std::runtime_error("Invalid regex syntax: not enough operands for Kleene star");
-                }
-                NFA operand = nfaStack.top(); nfaStack.pop();
-                nfaStack.push(applyKleeneStar(operand));
-            } else if (c == '?') {
-                if (nfaStack.empty()) {
-                    throw std::runtime_error("Invalid regex syntax: not enough operands for optional operator");
-                }
-                NFA operand = nfaStack.top(); nfaStack.pop();
-                nfaStack.push(applyOptional(operand));
             } else {
-                nfaStack.push(createBasicNFA(c));
+                // Push NFA for literal token (or call createLiteralNFA)
+                nfaStack.push(createLiteralNFA(std::string(1, token)));
             }
         }
-        
+        // Final processing: if more than one NFA remains, concatenate them left-to-right.
         if (nfaStack.empty()) {
             throw std::runtime_error("Error: Failed to build NFA from regex pattern");
         }
         if (nfaStack.size() > 1) {
-            throw std::runtime_error("Invalid regex syntax: too many operands left on stack");
-        }
-        NFA result = nfaStack.top();
-        if (result.accepting_states.empty() && !result.states.empty()) {
-            result.accepting_states.insert(result.states.back().id);
-            result.states.back().is_accepting = true;
-        }
-        if (result.states.size() > 10000) {
-            throw std::runtime_error("NFA has too many states (" +
-                                  std::to_string(result.states.size()) +
-                                  "), regex may be too complex");
-        }
-        
-        // NEW: Normalize final state only if the regex contains closure operators.
-        if (expanded.find('*') != std::string::npos || expanded.find('?') != std::string::npos) {
-            // Clear all old accepting states.
-            std::set<int> oldAccepting = result.accepting_states;
-            for (int s : oldAccepting) {
-                result.states[s].is_accepting = false;
+            std::vector<NFA> nfaList;
+            while (!nfaStack.empty()) {
+                nfaList.push_back(nfaStack.top());
+                nfaStack.pop();
             }
-            result.accepting_states.clear();
-            int finalState = result.addState(true);
-            for (int acc : oldAccepting) {
-                result.addEpsilonTransition(acc, finalState);
+            std::reverse(nfaList.begin(), nfaList.end());
+            NFA result = nfaList[0];
+            for (size_t i = 1; i < nfaList.size(); ++i) {
+                result = concatenateNFAs(result, nfaList[i]);
             }
-            result.accepting_states.insert(finalState);
+            return result;
         }
-        
-        std::cout << "Created NFA with " << result.states.size() << " states" << std::endl;
-        return result;
+        return nfaStack.top();
     }
     catch (const std::exception& e) {
         std::cerr << "Error in NFA construction: " << e.what() << std::endl;
@@ -457,10 +513,10 @@ std::set<int> epsilonClosure(const NFA& nfa, const std::set<int>& states) {
         int state = stack.top();
         stack.pop();
         
-        // Check if this state has any epsilon transitions
-        auto epsilonIt = nfa.states[state].epsilon_transitions.find(0);
-        if (epsilonIt != nfa.states[state].epsilon_transitions.end()) {
-            for (int target : epsilonIt->second) {
+        // Get all epsilon transitions
+        auto& transitions = nfa.states[state].epsilon_transitions;
+        for (const auto& [eps, targets] : transitions) {
+            for (int target : targets) {
                 if (result.find(target) == result.end()) {
                     result.insert(target);
                     stack.push(target);
@@ -482,19 +538,17 @@ std::set<int> move(const NFA& nfa, const std::set<int>& states, char symbol) {
             result.insert(it->second.begin(), it->second.end());
         }
     }
-    
     return result;
 }
 
 FSA NFAtoDFA(const NFA& nfa) {
-    std::cout << "Converting NFA to DFA using subset construction" << std::endl;
     
     FSA dfa;
     std::map<std::set<int>, int> dfaStates;
     std::queue<std::set<int>> unmarkedStates;
     std::set<char> alphabet;
     
-    // Safety check for extremely large NFAs
+    // Safety check for extremely large NFA
     if (nfa.states.size() > 10000) {
         throw std::runtime_error("NFA has too many states for DFA conversion");
     }
@@ -512,7 +566,6 @@ FSA NFAtoDFA(const NFA& nfa) {
     for (char symbol : alphabet) {
         symbolToIndex[symbol] = index++;
     }
-    
     dfa.num_alphabet_symbols = alphabet.size();
     dfa.alphabet = std::vector<char>(alphabet.begin(), alphabet.end());
     
@@ -522,7 +575,7 @@ FSA NFAtoDFA(const NFA& nfa) {
     unmarkedStates.push(initialState);
     dfa.start_state = 0;
     
-    // Initialize transition function
+    // Initialize transition function of the initial DFA state
     dfa.transition_function.clear();
     
     // Create a trap/dead state for invalid transitions
@@ -577,7 +630,6 @@ FSA NFAtoDFA(const NFA& nfa) {
                 // Add the transition
                 dfa.transition_function[currentDfaState][symbolIdx] = dfaStates[nextStateSet];
             }
-            
             symbolIdx++;
         }
     }
@@ -602,16 +654,15 @@ FSA NFAtoDFA(const NFA& nfa) {
                                "), regex may be too complex");
     }
     
-    std::cout << "Created DFA with " << dfa.num_states << " states" << std::endl;
     return dfa;
 }
 
 FSA FSAEngine::regexToDFA(const std::string& regex) {
+    conversionDebugLog.clear(); // Clear the log at the start of each conversion
     try {
-        std::cout << "Starting regex to DFA conversion: " << regex << std::endl;
         NFA nfa = regexToNFA(regex);
         FSA dfa = NFAtoDFA(nfa);
-        std::cout << "Conversion completed successfully" << std::endl;
+        conversionDebugLog += "DEBUG: DFA created with " + std::to_string(dfa.num_states) + " states\n";
         return dfa;
     } catch (const std::exception& e) {
         std::cerr << "Error in regexToDFA: " << e.what() << std::endl;

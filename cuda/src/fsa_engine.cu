@@ -1,23 +1,26 @@
-#include "fsa_engine.h"
+#include "../include/fsa_engine.h"
+#include "../../common/include/fsa_definition.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <iostream>
 #include <cstring>
+#include <vector>
+#include <algorithm>
 
-// ============ Implementazione dei kernel CUDA ============
+// ============ Implementation of kernels ============
 
 __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* output) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     
-    // Stato iniziale
+    // Initial state
     int current_state = fsa->start_state;
     
-    // Elabora la stringa di input
+    // Process input string
     for (int i = 0; input_string[i] != '\0'; i++) {
         char c = input_string[i];
         int symbol = -1;
         
-        // Supporto solo per alfabeto binario (0,1)
+        // Support only binary alphabet (0,1)
         if (c == '0') symbol = 0;
         else if (c == '1') symbol = 1;
         else {
@@ -25,13 +28,13 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
             return;
         }
         
-        // Verifica validità del simbolo
+        // Verify symbol validity
         if (symbol >= fsa->num_alphabet_symbols) {
             output[thread_id] = false;
             return;
         }
         
-        // Cerca transizione
+        // Find transition
         int next_state = fsa->transition_matrix[current_state * MAX_SYMBOLS + symbol];
         if (next_state < 0) {
             output[thread_id] = false;
@@ -41,7 +44,7 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
         current_state = next_state;
     }
     
-    // Verifica se è uno stato di accettazione
+    // Check if accepting state
     bool accepts = false;
     for (int i = 0; i < fsa->num_accepting_states; i++) {
         if (current_state == fsa->accepting_states[i]) {
@@ -59,33 +62,32 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= num_strings) return;
     
-    // Recupero informazioni sulla stringa
+    // Get input string info
     int offset = string_offsets[tid];
     int length = string_lengths[tid];
+    
+    // Initial state
     int current_state = dfa->start_state;
     
-    // Caso stringa vuota
-    if (length == 0) {
-        results[tid] = dfa->accepting_states[current_state] ? 1 : 0;
-        return;
-    }
-    
-    // Caching transizioni in memoria condivisa
-    __shared__ int transition_cache[BLOCK_SIZE][2]; 
+    // Cache for transitions (optimization)
+    __shared__ int transition_cache[BLOCK_SIZE][2];
     __shared__ int cache_hits[BLOCK_SIZE];
+    
     cache_hits[threadIdx.x] = -1;
     
-    // Elaborazione dei caratteri
+    // Process each character
     for (int i = 0; i < length; i++) {
         char c = input_strings[offset + i];
-        int symbol = (c == '0') ? 0 : ((c == '1') ? 1 : -1);
+        int symbol;
         
-        if (symbol == -1) {
+        if (c == '0') symbol = 0;
+        else if (c == '1') symbol = 1;
+        else {
             results[tid] = 0;
             return;
         }
         
-        // Uso della cache per migliorare le prestazioni
+        // Check cache for hit
         if (cache_hits[threadIdx.x] >= 0 && 
             transition_cache[threadIdx.x][0] == current_state && 
             transition_cache[threadIdx.x][1] == symbol) {
@@ -106,7 +108,7 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
         }
     }
     
-    // Risultato finale
+    // Final result
     results[tid] = dfa->accepting_states[current_state] ? 1 : 0;
 }
 
@@ -115,28 +117,26 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= num_strings) return;
     
-    // Caso stringa vuota
-    if (string_length == 0) {
-        results[tid] = dfa->accepting_states[dfa->start_state] ? 1 : 0;
-        return;
-    }
-    
-    // Calcolo offset alla stringa
+    // Get input string starting position
     int offset = tid * string_length;
+    
+    // Initial state
     int current_state = dfa->start_state;
     
-    // Elaborazione della stringa - ottimizzato per lunghezza fissa
+    // Process each character
     for (int i = 0; i < string_length; i++) {
         char c = input_strings[offset + i];
-        int symbol = (c == '0') ? 0 : ((c == '1') ? 1 : -1);
+        int symbol;
         
-        if (symbol == -1) {
+        if (c == '0') symbol = 0;
+        else if (c == '1') symbol = 1;
+        else {
             results[tid] = 0;
             return;
         }
         
-        // Accesso ottimizzato alla tabella delle transizioni
-        int next_state = dfa->transition_table[current_state * MAX_SYMBOLS + symbol];
+        int transition_idx = current_state * MAX_SYMBOLS + symbol;
+        int next_state = dfa->transition_table[transition_idx];
         
         if (next_state == -1) {
             results[tid] = 0;
@@ -146,11 +146,11 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
         current_state = next_state;
     }
     
-    // Risultato finale
+    // Final result
     results[tid] = dfa->accepting_states[current_state] ? 1 : 0;
 }
 
-// ============ Implementazione delle funzioni di utilità ============
+// ============ Implementation of helper functions ============
 
 CUDAFSA convertToCUDAFSA(const FSA& fsa) {
     CUDAFSA cuda_fsa;
@@ -159,16 +159,16 @@ CUDAFSA convertToCUDAFSA(const FSA& fsa) {
     cuda_fsa.start_state = fsa.start_state;
     cuda_fsa.num_accepting_states = fsa.accepting_states.size();
     
-    // Inizializza con -1 (nessuna transizione)
+    // Initialize with -1 (no transition)
     for (int i = 0; i < MAX_STATES * MAX_SYMBOLS; i++) {
         cuda_fsa.transition_matrix[i] = -1;
     }
     
-    // Copia transizioni
+    // Copy transitions
     for (int state = 0; state < fsa.num_states && state < MAX_STATES; state++) {
         for (int symbol = 0; symbol < fsa.num_alphabet_symbols && symbol < MAX_SYMBOLS; symbol++) {
-            if (state < fsa.transition_function.size() && 
-                symbol < fsa.transition_function[state].size() &&
+            if (state < static_cast<int>(fsa.transition_function.size()) && 
+                symbol < static_cast<int>(fsa.transition_function[state].size()) &&
                 fsa.transition_function[state][symbol] >= 0) {
                 cuda_fsa.transition_matrix[state * MAX_SYMBOLS + symbol] = 
                     fsa.transition_function[state][symbol];
@@ -176,7 +176,7 @@ CUDAFSA convertToCUDAFSA(const FSA& fsa) {
         }
     }
     
-    // Copia stati di accettazione
+    // Copy accepting states
     int i = 0;
     for (int state : fsa.accepting_states) {
         if (i < MAX_STATES) {
@@ -193,15 +193,15 @@ GPUDFA FSAEngine::prepareGPUDFA(const FSA& fsa) {
     gpu_dfa.num_symbols = fsa.num_alphabet_symbols;
     gpu_dfa.start_state = fsa.start_state;
     
-    // Inizializzazione
+    // Initialize
     memset(gpu_dfa.transition_table, -1, sizeof(gpu_dfa.transition_table));
     memset(gpu_dfa.accepting_states, 0, sizeof(gpu_dfa.accepting_states));
     
-    // Copia transizioni
+    // Copy transitions
     for (int state = 0; state < fsa.num_states; state++) {
         for (int symbol = 0; symbol < fsa.num_alphabet_symbols; symbol++) {
-            if (state < fsa.transition_function.size() && 
-                symbol < fsa.transition_function[state].size() &&
+            if (state < static_cast<int>(fsa.transition_function.size()) && 
+                symbol < static_cast<int>(fsa.transition_function[state].size()) &&
                 fsa.transition_function[state][symbol] >= 0) {
                 gpu_dfa.transition_table[state * MAX_SYMBOLS + symbol] = 
                     fsa.transition_function[state][symbol];
@@ -209,7 +209,7 @@ GPUDFA FSAEngine::prepareGPUDFA(const FSA& fsa) {
         }
     }
     
-    // Imposta stati di accettazione
+    // Set accepting states
     for (int state : fsa.accepting_states) {
         if (state < MAX_STATES) {
             gpu_dfa.accepting_states[state] = true;
@@ -225,21 +225,21 @@ std::vector<bool> FSAEngine::runBatchOnGPU(const FSA& fsa, const std::vector<std
     }
     
     try {
-        // Preparazione del DFA per GPU
+        // Prepare DFA for GPU
         GPUDFA gpu_dfa = prepareGPUDFA(fsa);
         
-        // Calcolo dello spazio totale necessario
+        // Calculate total space needed
         size_t total_chars = 0;
         for (const auto& s : inputs) {
             total_chars += s.length();
         }
         
-        // Preparazione dati host
+        // Prepare host data
         std::vector<char> all_strings(total_chars);
         std::vector<int> string_lengths(inputs.size());
         std::vector<int> string_offsets(inputs.size());
         
-        // Riempimento dei dati di input
+        // Fill input data
         size_t offset = 0;
         for (size_t i = 0; i < inputs.size(); i++) {
             string_offsets[i] = offset;
@@ -251,7 +251,7 @@ std::vector<bool> FSAEngine::runBatchOnGPU(const FSA& fsa, const std::vector<std
             }
         }
         
-        // Allocazione memoria su device
+        // Allocate device memory
         char* d_strings;
         int* d_lengths;
         int* d_offsets;
@@ -264,62 +264,173 @@ std::vector<bool> FSAEngine::runBatchOnGPU(const FSA& fsa, const std::vector<std
         cudaMalloc(&d_results, inputs.size() * sizeof(char));
         cudaMalloc(&d_dfa, sizeof(GPUDFA));
         
-        // Copia dati su device
+        // Copy data to device
         cudaMemcpy(d_strings, all_strings.data(), all_strings.size(), cudaMemcpyHostToDevice);
         cudaMemcpy(d_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(d_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice);
         
-        // Lanciare kernel
-        int block_size = BLOCK_SIZE;
-        int grid_size = (inputs.size() + block_size - 1) / block_size;
+        // Calculate grid and block sizes
+        int blockSize = BLOCK_SIZE;
+        int gridSize = (inputs.size() + blockSize - 1) / blockSize;
         
-        // Verifica se tutte le stringhe hanno la stessa lunghezza
-        bool same_length = true;
-        int first_length = inputs[0].length();
-        for (size_t i = 1; i < inputs.size(); i++) {
-            if (inputs[i].length() != static_cast<size_t>(first_length)) {
-                same_length = false;
-                break;
-            }
-        }
+        // Launch kernel
+        fsa_kernel_batch<<<gridSize, blockSize>>>(d_dfa, d_strings, d_lengths, d_offsets, inputs.size(), d_results);
         
-        // Scelta del kernel appropriato
-        if (same_length) {
-            // Kernel ottimizzato per stringhe della stessa lunghezza
-            fsa_kernel_fixed_length<<<grid_size, block_size>>>(d_dfa, d_strings, first_length, inputs.size(), d_results);
-        } else {
-            // Kernel generico per stringhe di lunghezza variabile
-            fsa_kernel_batch<<<grid_size, block_size>>>(d_dfa, d_strings, d_lengths, d_offsets, inputs.size(), d_results);
-        }
-        
-        // Sincronizzazione
-        cudaDeviceSynchronize();
-        cudaError_t error = cudaGetLastError();
-        if (error != cudaSuccess) {
-            throw std::runtime_error(std::string("CUDA error: ") + cudaGetErrorString(error));
-        }
-        
-        // Recupero risultati
+        // Copy results back to host
         std::vector<char> results(inputs.size());
         cudaMemcpy(results.data(), d_results, inputs.size() * sizeof(char), cudaMemcpyDeviceToHost);
         
-        // Conversione a vector<bool>
-        std::vector<bool> bool_results(inputs.size());
-        for (size_t i = 0; i < inputs.size(); i++) {
-            bool_results[i] = (results[i] != 0);
-        }
-        
-        // Pulizia memoria device
+        // Free device memory
         cudaFree(d_strings);
         cudaFree(d_lengths);
         cudaFree(d_offsets);
         cudaFree(d_results);
         cudaFree(d_dfa);
         
+        // Convert char results to bool
+        std::vector<bool> bool_results;
+        for (char r : results) {
+            bool_results.push_back(r != 0);
+        }
+        
         return bool_results;
     } catch (const std::exception& e) {
         std::cerr << "Error in runBatchOnGPU: " << e.what() << std::endl;
         return std::vector<bool>(inputs.size(), false);
     }
+}
+
+bool* FSAEngine::runOnGPU(const CUDAFSA& cudafsa, const std::vector<std::string>& inputs, bool* accepts) {
+    if (inputs.empty()) {
+        return nullptr;
+    }
+    
+    // Allocate device memory for the FSA
+    CUDAFSA* d_fsa;
+    cudaMalloc(&d_fsa, sizeof(CUDAFSA));
+    
+    // Copy FSA to device
+    cudaMemcpy(d_fsa, &cudafsa, sizeof(CUDAFSA), cudaMemcpyHostToDevice);
+    
+    // Allocate memory for results
+    bool* d_results;
+    cudaMalloc(&d_results, inputs.size() * sizeof(bool));
+    
+    // For each input string
+    for (size_t i = 0; i < inputs.size(); i++) {
+        const std::string& input = inputs[i];
+        
+        // Allocate device memory for input string
+        char* d_input;
+        cudaMalloc(&d_input, input.length() + 1);
+        
+        // Copy input string to device (including null terminator)
+        cudaMemcpy(d_input, input.c_str(), input.length() + 1, cudaMemcpyHostToDevice);
+        
+        // Launch kernel
+        fsa_kernel<<<1, 1>>>(d_fsa, d_input, d_results + i);
+        
+        // Free input string memory
+        cudaFree(d_input);
+    }
+    
+    // Copy results back to host
+    bool* results = new bool[inputs.size()];
+    cudaMemcpy(results, d_results, inputs.size() * sizeof(bool), cudaMemcpyDeviceToHost);
+    
+    // Set the first result to accepts if provided
+    if (accepts && !inputs.empty()) {
+        *accepts = results[0];
+    }
+    
+    // Free device memory
+    cudaFree(d_fsa);
+    cudaFree(d_results);
+    
+    return results;
+}
+
+void FSAEngine::freeCUDAFSA(CUDAFSA& cudafsa) {
+    // Nothing to free in this implementation
+    (void)cudafsa; // Suppress unused parameter warning
+}
+
+#ifdef DEBUG_FSA
+void debugFSA(const FSA& fsa, const std::string& input) {
+    std::cout << "DEBUG: Tracing FSA execution for input: " << input << std::endl;
+    
+    // Print FSA structure
+    std::cout << "FSA Structure:" << std::endl;
+    std::cout << "  Start state: " << fsa.start_state << std::endl;
+    std::cout << "  Accepting states: ";
+    for (int s : fsa.accepting_states) {
+        std::cout << s << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "  Transitions:" << std::endl;
+    for (int s = 0; s < fsa.num_states; s++) {
+        if (s < static_cast<int>(fsa.transition_function.size())) {
+            for (int c = 0; c < fsa.num_alphabet_symbols; c++) {
+                if (c < static_cast<int>(fsa.transition_function[s].size())) {
+                    int next = fsa.transition_function[s][c];
+                    if (next >= 0) {
+                        std::cout << "    δ(" << s << ", " << c << ") = " << next << std::endl;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Continue with the execution trace
+    int state = fsa.start_state;
+    std::cout << "Execution trace:" << std::endl;
+    std::cout << "  Initial state: " << state << std::endl;
+    
+    for (char c : input) {
+        int symbol = (c == '0') ? 0 : 1;
+        
+        // First check if the transition actually exists in the FSA
+        if (state >= 0 && state < fsa.num_states && 
+            symbol < fsa.num_alphabet_symbols &&
+            state < static_cast<int>(fsa.transition_function.size()) &&
+            symbol < static_cast<int>(fsa.transition_function[state].size())) {
+            
+            int next = fsa.transition_function[state][symbol];
+            if (next >= 0) {
+                std::cout << "    Read '" << c << "': " << state << " -> " << next << std::endl;
+                state = next;
+            } else {
+                std::cout << "    No transition defined for state " << state << " with symbol " << symbol << std::endl;
+                break;
+            }
+        } else {
+            std::cout << "    Invalid transition parameters: state=" << state 
+                      << ", symbol=" << symbol 
+                      << ", num_states=" << fsa.num_states
+                      << ", transition_function.size()=" << fsa.transition_function.size() << std::endl;
+            break;
+        }
+    }
+    
+    bool accepts = std::find(fsa.accepting_states.begin(), fsa.accepting_states.end(), state) != fsa.accepting_states.end();
+    std::cout << "  Final state: " << state << " (Accepting: " << (accepts ? "Yes" : "No") << ")" << std::endl;
+}
+#else
+// Empty stub for release builds with proper parameter name suppression
+void debugFSA(const FSA& /*fsa*/, const std::string& /*input*/) {}
+#endif
+
+// Clean up the runSingleTest function
+bool FSAEngine::runSingleTest(const std::string& regex, const std::string& input) {
+    // Convert regex to FSA
+    FSA fsa = regexToDFA(regex);
+    
+    // Process all regex patterns using CUDA
+    CUDAFSA cuda_fsa = convertToCUDAFSA(fsa);
+    std::vector<std::string> inputs = {input};
+    bool result = false;
+    runOnGPU(cuda_fsa, inputs, &result);
+    
+    return result;
 }
