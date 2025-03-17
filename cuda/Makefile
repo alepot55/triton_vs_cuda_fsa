@@ -20,6 +20,9 @@ SRC_FILES = $(SRC_DIR)/fsa_engine.cu $(BENCH_DIR)/benchmark_fsa.cu
 COMMON_OBJS = $(OBJ_DIR)/regex_conversion.o
 CUDA_OBJS = $(OBJ_DIR)/fsa_engine.o $(OBJ_DIR)/benchmark_fsa.o
 
+# Add NVML library for GPU metrics
+NVML_LIB = -lnvidia-ml
+
 # Define the target executable
 TARGET = fsa_engine_cuda
 
@@ -28,7 +31,7 @@ all: $(TARGET)
 
 # Link the final executable
 $(TARGET): $(COMMON_OBJS) $(CUDA_OBJS)
-	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) -o $@ $^
+	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(NVML_LIB) -o $@ $^
 
 # Compile common C++ code
 $(OBJ_DIR)/regex_conversion.o: $(COMMON_SRC)

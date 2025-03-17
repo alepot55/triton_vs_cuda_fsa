@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 // Add for profiling metrics
 #include <nvml.h>
 #include "../src/fsa_engine.h"
@@ -150,8 +151,10 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
 }
 
 // Esegue un singolo test usando direttamente i kernel CUDA
-void runTest(TestCase& test, int batch_size) {
-    std::cout << "Running test: " << test.name << std::endl;
+void runTest(TestCase& test, int batch_size, bool verbose = false) {
+    if (verbose) {
+        std::cout << "Running test: " << test.name << std::endl;
+    }
     
     try {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -159,8 +162,20 @@ void runTest(TestCase& test, int batch_size) {
         // Memory usage before starting
         size_t memory_before = getMemoryUsage();
         
-        // Converti la regex in FSA
-        FSA fsa = FSAEngine::regexToDFA(test.regex);
+        // Converti la regex in FSA - suppress output
+        FSA fsa;
+        {
+            // Temporarily redirect cout to null to suppress FSA conversion output
+            std::streambuf* old_cout = std::cout.rdbuf();
+            std::ofstream null_stream;
+            null_stream.open("/dev/null");
+            std::cout.rdbuf(null_stream.rdbuf());
+            
+            fsa = FSAEngine::regexToDFA(test.regex);
+            
+            // Restore cout
+            std::cout.rdbuf(old_cout);
+        }
         
         // Converti l'FSA in CUDAFSA (GPU-friendly)
         CUDAFSA cuda_fsa = convertToCUDAFSA(fsa);
@@ -287,29 +302,33 @@ void runTest(TestCase& test, int batch_size) {
         double total_bytes_transferred = sizeof(CUDAFSA) + test.input.length() + 1 + sizeof(bool);
         test.metrics.memory_bandwidth = (total_bytes_transferred / test.metrics.memory_transfer_time) * 1000.0 / (1024.0 * 1024.0); // MB/s
         
-        std::cout << "Test executed with CUDA kernel" << std::endl;
-        std::cout << "  Execution time: " << test.metrics.execution_time << " ms" << std::endl;
-        std::cout << "  Memory transfer time: " << test.metrics.memory_transfer_time << " ms" << std::endl;
-        std::cout << "  Memory used: " << test.metrics.memory_used << " bytes" << std::endl;
-        std::cout << "  GPU utilization: " << test.metrics.gpu_utilization << "%" << std::endl;
-        std::cout << "  Memory bandwidth: " << test.metrics.memory_bandwidth << " MB/s" << std::endl;
+        if (verbose) {
+            std::cout << "Test executed with CUDA kernel" << std::endl;
+            std::cout << "  Execution time: " << test.metrics.execution_time << " ms" << std::endl;
+            std::cout << "  Memory transfer time: " << test.metrics.memory_transfer_time << " ms" << std::endl;
+            std::cout << "  Memory used: " << test.metrics.memory_used << " bytes" << std::endl;
+            std::cout << "  GPU utilization: " << test.metrics.gpu_utilization << "%" << std::endl;
+            std::cout << "  Memory bandwidth: " << test.metrics.memory_bandwidth << " MB/s" << std::endl;
+        }
     } catch (const std::exception& e) {
         std::cerr << "Exception during test execution: " << e.what() << std::endl;
         test.metrics.execution_time = 0.0;
         test.actual_result = false;
     }
     
-    std::cout << "  Result: " << (test.actual_result ? "ACCEPT" : "REJECT") 
+    if (verbose) {
+        std::cout << "  Result: " << (test.actual_result ? "ACCEPT" : "REJECT") 
               << " (Expected: " << (test.expected_result ? "ACCEPT" : "REJECT") << ")" << std::endl;
+    }
 }
 
 // Esegue tutti i test e stampa i risultati
-void runAllTests(std::vector<TestCase>& tests, int batch_size) {
+void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose = false) {
     int tests_passed = 0;
     int tests_failed = 0;
     
     for (auto& test : tests) {
-        runTest(test, batch_size);
+        runTest(test, batch_size, verbose);
         if (test.actual_result == test.expected_result) {
             tests_passed++;
         } else {
@@ -333,17 +352,54 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size) {
         }
     }
     
-    // Calcola il tempo medio di esecuzione
+    // Detailed benchmark results for each test
+    std::cout << "\n===== BENCHMARK RESULTS =====\n";
+    
+    std::cout << std::left << std::setw(30) << "Test Name" 
+              << std::setw(15) << "Exec Time (ms)" 
+              << std::setw(15) << "Mem Time (ms)" 
+              << std::setw(15) << "GPU Util (%)" 
+              << std::setw(15) << "Mem Used (B)" 
+              << std::setw(15) << "Bandwidth (MB/s)" 
+              << std::endl;
+    std::cout << std::string(105, '-') << std::endl;
+    
     double total_time = 0.0;
+    double total_mem_time = 0.0;
+    double total_gpu_util = 0.0;
+    size_t total_mem_used = 0;
+    double total_bandwidth = 0.0;
+    
     for (const auto& test : tests) {
+        std::cout << std::left << std::setw(30) << test.name 
+                  << std::setw(15) << std::fixed << std::setprecision(4) << test.metrics.execution_time
+                  << std::setw(15) << std::fixed << std::setprecision(4) << test.metrics.memory_transfer_time
+                  << std::setw(15) << std::fixed << std::setprecision(2) << test.metrics.gpu_utilization
+                  << std::setw(15) << test.metrics.memory_used
+                  << std::setw(15) << std::fixed << std::setprecision(2) << test.metrics.memory_bandwidth
+                  << std::endl;
+                  
         total_time += test.metrics.execution_time;
+        total_mem_time += test.metrics.memory_transfer_time;
+        total_gpu_util += test.metrics.gpu_utilization;
+        total_mem_used += test.metrics.memory_used;
+        total_bandwidth += test.metrics.memory_bandwidth;
     }
-    std::cout << "\nAverage execution time: " << (total_time / tests.size()) << " ms" << std::endl;
-    std::cout << "Batch size: " << batch_size << " (GPU mode with CUDA optimization)" << std::endl;
+    
+    std::cout << std::string(105, '-') << std::endl;
+    std::cout << std::left << std::setw(30) << "AVERAGE" 
+              << std::setw(15) << std::fixed << std::setprecision(4) << (total_time / tests.size())
+              << std::setw(15) << std::fixed << std::setprecision(4) << (total_mem_time / tests.size())
+              << std::setw(15) << std::fixed << std::setprecision(2) << (total_gpu_util / tests.size())
+              << std::setw(15) << (total_mem_used / tests.size())
+              << std::setw(15) << std::fixed << std::setprecision(2) << (total_bandwidth / tests.size())
+              << std::endl;
+    
+    std::cout << "\nBatch size: " << batch_size << " (GPU mode with CUDA optimization)" << std::endl;
 }
 
 // Parse command line arguments
-void parseArgs(int argc, char* argv[], std::string& regex, std::string& input, int& batch_size) {
+void parseArgs(int argc, char* argv[], std::string& regex, std::string& input, int& batch_size, bool& verbose) {
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         
@@ -363,6 +419,10 @@ void parseArgs(int argc, char* argv[], std::string& regex, std::string& input, i
                 std::cerr << "Invalid batch size: " << arg.substr(13) << std::endl;
             }
         }
+        // Parse --verbose flag
+        else if (arg == "--verbose") {
+            verbose = true;
+        }
         // Legacy format (positional parameters)
         else if (regex == "(0|1)*1") {
             regex = arg;
@@ -379,6 +439,7 @@ void printUsage() {
     std::cout << "  --input=STRING      Set the input string to test\n";
     std::cout << "  --batch-size=N      Set the batch size for performance testing\n";
     std::cout << "  --test-file=FILE    Run tests from a test file\n";
+    std::cout << "  --verbose           Enable verbose output\n";
     std::cout << "  --help              Display this help message\n";
     std::cout << "\nNote: All tests are run in GPU-optimized mode by default\n";
 }
@@ -397,6 +458,7 @@ int main(int argc, char* argv[]) {
         std::string test_file = "";
         bool run_tests = false;
         bool show_help = false;
+        bool verbose = false;
         
         // Parse command line arguments
         for (int i = 1; i < argc; i++) {
@@ -422,6 +484,9 @@ int main(int argc, char* argv[]) {
             else if (arg == "--help") {
                 show_help = true;
             }
+            else if (arg == "--verbose") {
+                verbose = true;
+            }
             // Legacy format (positional parameters)
             else if (regex == "(0|1)*1" && arg[0] != '-') {
                 regex = arg;
@@ -439,28 +504,44 @@ int main(int argc, char* argv[]) {
         if (run_tests) {
             std::vector<TestCase> tests;
             if (loadTestsFromFile(test_file, tests)) {
-                runAllTests(tests, batch_size);
+                runAllTests(tests, batch_size, verbose);
                 return 0;
             } else {
                 return 1;
             }
         }
 
-        std::cout << "Regex: " << regex << std::endl;
-        std::cout << "Testing string: " << input << std::endl;
-        std::cout << "Batch size: " << batch_size << std::endl;
-        std::cout << "Mode: GPU-optimized CUDA (default)" << std::endl;
+        if (verbose) {
+            std::cout << "Regex: " << regex << std::endl;
+            std::cout << "Testing string: " << input << std::endl;
+            std::cout << "Batch size: " << batch_size << std::endl;
+            std::cout << "Mode: GPU-optimized CUDA (default)" << std::endl;
+        }
 
         // Converti la regex in FSA
-        std::cout << "Step 1: Converting regex to FSA..." << std::endl;
-        FSA fsa = FSAEngine::regexToDFA(regex);
-        std::cout << "FSA created with " << fsa.num_states << " states" << std::endl;
+        FSA fsa;
+        if (verbose) {
+            std::cout << "Step 1: Converting regex to FSA..." << std::endl;
+            fsa = FSAEngine::regexToDFA(regex);
+            std::cout << "FSA created with " << fsa.num_states << " states" << std::endl;
+        } else {
+            // Temporarily redirect cout to null to suppress FSA conversion output
+            std::streambuf* old_cout = std::cout.rdbuf();
+            std::ofstream null_stream;
+            null_stream.open("/dev/null");
+            std::cout.rdbuf(null_stream.rdbuf());
+            
+            fsa = FSAEngine::regexToDFA(regex);
+            
+            // Restore cout
+            std::cout.rdbuf(old_cout);
+        }
         
         // Converti l'FSA in CUDAFSA (GPU-friendly)
-        std::cout << "Step 2: Converting FSA to CUDAFSA..." << std::endl;
+        if (verbose) std::cout << "Step 2: Converting FSA to CUDAFSA..." << std::endl;
         CUDAFSA cuda_fsa = convertToCUDAFSA(fsa);
         
-        std::cout << "Step 3: Setting up CUDA memory..." << std::endl;
+        if (verbose) std::cout << "Step 3: Setting up CUDA memory..." << std::endl;
         
         // Check for CUDA errors
         cudaError_t cudaStatus;
@@ -480,7 +561,7 @@ int main(int argc, char* argv[]) {
 
         // If batch size > 1, create a batch of identical strings for performance testing
         if (batch_size > 1) {
-            std::cout << "Running batch performance test with " << batch_size << " strings" << std::endl;
+            if (verbose) std::cout << "Running batch performance test with " << batch_size << " strings" << std::endl;
             
             // Create batch of strings (for performance testing, all same strings)
             std::vector<std::string> input_strings(batch_size, input);
@@ -521,7 +602,7 @@ int main(int argc, char* argv[]) {
             int block_size = BLOCK_SIZE;
             int grid_size = (batch_size + block_size - 1) / block_size;
             
-            std::cout << "Step 4: Launching batch kernel with " << grid_size << " blocks..." << std::endl;
+            if (verbose) std::cout << "Step 4: Launching batch kernel with " << grid_size << " blocks..." << std::endl;
             
             auto start_time = std::chrono::high_resolution_clock::now();
             
@@ -615,7 +696,7 @@ int main(int argc, char* argv[]) {
             float transfer_time;
             cudaEventElapsedTime(&transfer_time, start_transfer, stop_transfer);
             
-            std::cout << "Step 4: Launching kernel..." << std::endl;
+            if (verbose) std::cout << "Step 4: Launching kernel..." << std::endl;
             
             // Record initial memory usage
             size_t memory_before = getMemoryUsage();
@@ -691,11 +772,14 @@ int main(int argc, char* argv[]) {
             std::cout << "Input String: " << input << std::endl;
             std::cout << "Accepts: " << (host_output ? "true" : "false") << std::endl;
             std::cout << "Execution Time (total): " << execution_time_ms << " ms" << std::endl;
-            std::cout << "Kernel Execution Time: " << kernel_time << " ms" << std::endl;
-            std::cout << "Memory Transfer Time: " << transfer_time << " ms" << std::endl;
-            std::cout << "Memory Used: " << memory_used << " bytes" << std::endl;
-            std::cout << "GPU Utilization: " << gpu_utilization << "%" << std::endl;
-            std::cout << "Memory Bandwidth: " << memory_bandwidth << " MB/s" << std::endl;
+            
+            if (verbose) {
+                std::cout << "Kernel Execution Time: " << kernel_time << " ms" << std::endl;
+                std::cout << "Memory Transfer Time: " << transfer_time << " ms" << std::endl;
+                std::cout << "Memory Used: " << memory_used << " bytes" << std::endl;
+                std::cout << "GPU Utilization: " << gpu_utilization << "%" << std::endl;
+                std::cout << "Memory Bandwidth: " << memory_bandwidth << " MB/s" << std::endl;
+            }
             
             // Clean up events
             cudaEventDestroy(start_transfer);
