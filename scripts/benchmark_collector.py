@@ -19,7 +19,8 @@ def run_cuda_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3):
             "../cuda/fsa_engine_cuda", 
             f"--regex={regex}", 
             f"--input={input_string}",
-            f"--batch-size={batch_size}"
+            f"--batch-size={batch_size}",
+            "--verbose"  # Add verbose flag to get detailed metrics
         ]
         
         try:
@@ -39,28 +40,28 @@ def run_cuda_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3):
             exec_match = re.search(r"Execution Time \(total\): (\d+\.\d+) ms", output)
             if exec_match:
                 metrics["execution_time_(ms)"] = float(exec_match.group(1))
-                
-            # Extract kernel execution time
+            
+            # Extract kernel execution time (verbose output)
             kernel_match = re.search(r"Kernel Execution Time: (\d+\.\d+) ms", output)
             if kernel_match:
                 metrics["kernel_time_(ms)"] = float(kernel_match.group(1))
                 
-            # Extract memory transfer time
+            # Extract memory transfer time (verbose output)
             transfer_match = re.search(r"Memory Transfer Time: (\d+\.\d+) ms", output)
             if transfer_match:
                 metrics["memory_transfer_time_(ms)"] = float(transfer_match.group(1))
                 
-            # Extract memory usage
+            # Extract memory usage (verbose output)
             memory_match = re.search(r"Memory Used: (\d+) bytes", output)
             if memory_match:
                 metrics["memory_used_(bytes)"] = int(memory_match.group(1))
             
-            # Extract GPU utilization
+            # Extract GPU utilization (verbose output)
             gpu_match = re.search(r"GPU Utilization: (\d+\.\d+)%", output)
             if gpu_match:
                 metrics["gpu_utilization_(%)"] = float(gpu_match.group(1))
                 
-            # Extract memory bandwidth
+            # Extract memory bandwidth (verbose output)
             bandwidth_match = re.search(r"Memory Bandwidth: (\d+\.\d+) MB/s", output)
             if bandwidth_match:
                 metrics["memory_bandwidth_(MB/s)"] = float(bandwidth_match.group(1))
@@ -111,7 +112,7 @@ def run_triton_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3
             }
             
             # Extract total execution time
-            total_time_match = re.search(r"Total Execution Time: (\d+\.\d+) ms", output)
+            total_time_match = re.search(r"Execution Time \(ms\): (\d+\.\d+)", output)
             if total_time_match:
                 metrics["execution_time_(ms)"] = float(total_time_match.group(1))
                 
@@ -157,6 +158,12 @@ def run_triton_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3
             accepts_match = re.search(r"Result: (ACCEPT|REJECT)", output)
             if accepts_match:
                 metrics["accepts"] = accepts_match.group(1) == "ACCEPT"
+                
+            # Try alternative formats for acceptance
+            if "accepts" not in metrics:
+                alt_accepts_match = re.search(r"Accepts: (true|false)", output)
+                if alt_accepts_match:
+                    metrics["accepts"] = alt_accepts_match.group(1) == "true"
             
             metrics_list.append(metrics)
             
@@ -262,12 +269,58 @@ def main():
     print(f"Batch sizes: {args.batch_sizes}")
     print(f"Runs per configuration: {args.num_runs}")
     
+    # Debug flag - print raw output
+    debug = True
+    
+    if debug:
+        # Run a single test with debug output
+        print("DEBUG MODE: Running a single test to check parsing...")
+        try:
+            cuda_cmd = [
+                "../cuda/fsa_engine_cuda", 
+                f"--regex={args.regex_patterns[0]}", 
+                f"--input={args.test_strings[0]}",
+                f"--batch-size={args.batch_sizes[0]}",
+                "--verbose"
+            ]
+            cuda_result = subprocess.run(cuda_cmd, check=True, capture_output=True, text=True)
+            print("\n--- RAW CUDA OUTPUT ---")
+            print(cuda_result.stdout)
+            print("--- END CUDA OUTPUT ---\n")
+            
+            # Also run Triton for comparison
+            triton_cmd = [
+                "python", "/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/triton/benchmarks/benchmark_fsa.py",
+                f"--regex={args.regex_patterns[0]}",
+                f"--input={args.test_strings[0]}",
+                f"--batch-size={args.batch_sizes[0]}"
+            ]
+            triton_result = subprocess.run(triton_cmd, check=True, capture_output=True, text=True)
+            print("\n--- RAW TRITON OUTPUT ---")
+            print(triton_result.stdout)
+            print("--- END TRITON OUTPUT ---\n")
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Debug command failed: {e}")
+            print(f"STDERR: {e.stderr}")
+    
     results_df = run_benchmarks(
         args.test_strings,
         args.regex_patterns,
         args.batch_sizes,
         args.num_runs
     )
+    
+    # Print the raw data for inspection
+    print("\nRaw collected data:")
+    print(results_df)
+    
+    # Check for missing data
+    print("\nMissing data analysis:")
+    for col in results_df.columns:
+        missing = results_df[col].isna().sum()
+        if missing > 0:
+            print(f"Column '{col}' has {missing} missing values")
     
     # Save results
     results_df.to_csv(output_path, index=False)
