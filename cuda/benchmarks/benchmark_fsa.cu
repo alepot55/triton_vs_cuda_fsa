@@ -5,11 +5,71 @@
 #include <cuda_runtime.h>
 #include <cstring>
 #include <fstream>
+// Add for profiling metrics
+#include <nvml.h>
 #include "../src/fsa_engine.h"
 #include "fsa_definition.h"
 
 // Dichiarazione esterna della funzione di conversione
 extern CUDAFSA convertToCUDAFSA(const FSA& fsa);
+
+// Structure to hold benchmark metrics
+struct BenchmarkMetrics {
+    double execution_time;        // in ms
+    double memory_transfer_time;  // in ms
+    size_t memory_used;           // in bytes
+    double gpu_utilization;       // in percent
+    double memory_bandwidth;      // in MB/s
+    
+    BenchmarkMetrics() : execution_time(0), memory_transfer_time(0),
+                         memory_used(0), gpu_utilization(0), memory_bandwidth(0) {}
+};
+
+// Initialize NVML for GPU monitoring
+bool initNVML() {
+    nvmlReturn_t result = nvmlInit();
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to initialize NVML: " << nvmlErrorString(result) << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// Shutdown NVML
+void shutdownNVML() {
+    nvmlShutdown();
+}
+
+// Get GPU utilization
+double getGPUUtilization() {
+    nvmlDevice_t device;
+    nvmlUtilization_t utilization;
+    
+    nvmlReturn_t result = nvmlDeviceGetHandleByIndex(0, &device);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to get device handle: " << nvmlErrorString(result) << std::endl;
+        return 0.0;
+    }
+    
+    result = nvmlDeviceGetUtilizationRates(device, &utilization);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to get utilization: " << nvmlErrorString(result) << std::endl;
+        return 0.0;
+    }
+    
+    return utilization.gpu;
+}
+
+// Get memory usage
+size_t getMemoryUsage() {
+    size_t free_mem, total_mem;
+    cudaError_t status = cudaMemGetInfo(&free_mem, &total_mem);
+    if (status != cudaSuccess) {
+        std::cerr << "Failed to get memory info: " << cudaGetErrorString(status) << std::endl;
+        return 0;
+    }
+    return total_mem - free_mem;
+}
 
 // Struttura per gestire i casi di test
 struct TestCase {
@@ -18,10 +78,10 @@ struct TestCase {
     std::string input;
     bool expected_result;
     bool actual_result;
-    double execution_time;
+    BenchmarkMetrics metrics;
     
     TestCase(const std::string& n, const std::string& r, const std::string& i, bool exp)
-        : name(n), regex(r), input(i), expected_result(exp), actual_result(false), execution_time(0.0) {}
+        : name(n), regex(r), input(i), expected_result(exp), actual_result(false) {}
 };
 
 // Funzione per caricare i test da file
@@ -96,6 +156,9 @@ void runTest(TestCase& test, int batch_size) {
     try {
         auto start_time = std::chrono::high_resolution_clock::now();
         
+        // Memory usage before starting
+        size_t memory_before = getMemoryUsage();
+        
         // Converti la regex in FSA
         FSA fsa = FSAEngine::regexToDFA(test.regex);
         
@@ -109,10 +172,18 @@ void runTest(TestCase& test, int batch_size) {
         bool* dev_output;
         bool result = false;
         
+        // Create CUDA events for timing memory transfers
+        cudaEvent_t start_transfer, stop_transfer;
+        cudaEventCreate(&start_transfer);
+        cudaEventCreate(&stop_transfer);
+        
         cudaStatus = cudaMalloc(&dev_fsa, sizeof(CUDAFSA));
         if (cudaStatus != cudaSuccess) {
             throw std::runtime_error("cudaMalloc failed for dev_fsa");
         }
+        
+        // Start timing memory transfers
+        cudaEventRecord(start_transfer);
         
         cudaStatus = cudaMemcpy(dev_fsa, &cuda_fsa, sizeof(CUDAFSA), cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) {
@@ -141,10 +212,41 @@ void runTest(TestCase& test, int batch_size) {
             throw std::runtime_error("cudaMemcpy failed for dev_input_string");
         }
         
+        // Stop timing memory transfers
+        cudaEventRecord(stop_transfer);
+        cudaEventSynchronize(stop_transfer);
+        
+        float transfer_time;
+        cudaEventElapsedTime(&transfer_time, start_transfer, stop_transfer);
+        test.metrics.memory_transfer_time = transfer_time;
+        
+        // Create events for kernel timing
+        cudaEvent_t start_kernel, stop_kernel;
+        cudaEventCreate(&start_kernel);
+        cudaEventCreate(&stop_kernel);
+        
         // Launch kernel for single string
         dim3 blockDim(256);
         dim3 gridDim(1);
+        
+        // Start timing kernel execution
+        cudaEventRecord(start_kernel);
+        
         fsa_kernel<<<gridDim, blockDim>>>(dev_fsa, dev_input_string, dev_output);
+        
+        // Stop timing kernel execution
+        cudaEventRecord(stop_kernel);
+        cudaEventSynchronize(stop_kernel);
+        
+        float kernel_time;
+        cudaEventElapsedTime(&kernel_time, start_kernel, stop_kernel);
+        
+        // Memory usage after kernel execution
+        size_t memory_after = getMemoryUsage();
+        test.metrics.memory_used = memory_after - memory_before;
+        
+        // Get GPU utilization (requires NVML)
+        test.metrics.gpu_utilization = getGPUUtilization();
         
         // Ensure kernel execution completes
         cudaStatus = cudaDeviceSynchronize();
@@ -168,24 +270,37 @@ void runTest(TestCase& test, int batch_size) {
         
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        test.execution_time = duration.count() / 1000.0; // ms
+        test.metrics.execution_time = duration.count() / 1000.0; // ms
+        
+        // Clean up events
+        cudaEventDestroy(start_transfer);
+        cudaEventDestroy(stop_transfer);
+        cudaEventDestroy(start_kernel);
+        cudaEventDestroy(stop_kernel);
         
         // Clean up
         cudaFree(dev_fsa);
         cudaFree(dev_input_string);
         cudaFree(dev_output);
         
-        std::cout << "Test executed with CUDA kernel, execution time: " 
-                  << test.execution_time << " ms" << std::endl;
+        // Calculate memory bandwidth (bytes / sec)
+        double total_bytes_transferred = sizeof(CUDAFSA) + test.input.length() + 1 + sizeof(bool);
+        test.metrics.memory_bandwidth = (total_bytes_transferred / test.metrics.memory_transfer_time) * 1000.0 / (1024.0 * 1024.0); // MB/s
+        
+        std::cout << "Test executed with CUDA kernel" << std::endl;
+        std::cout << "  Execution time: " << test.metrics.execution_time << " ms" << std::endl;
+        std::cout << "  Memory transfer time: " << test.metrics.memory_transfer_time << " ms" << std::endl;
+        std::cout << "  Memory used: " << test.metrics.memory_used << " bytes" << std::endl;
+        std::cout << "  GPU utilization: " << test.metrics.gpu_utilization << "%" << std::endl;
+        std::cout << "  Memory bandwidth: " << test.metrics.memory_bandwidth << " MB/s" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Exception during test execution: " << e.what() << std::endl;
-        test.execution_time = 0.0;
+        test.metrics.execution_time = 0.0;
         test.actual_result = false;
     }
     
     std::cout << "  Result: " << (test.actual_result ? "ACCEPT" : "REJECT") 
               << " (Expected: " << (test.expected_result ? "ACCEPT" : "REJECT") << ")" << std::endl;
-    std::cout << "  Time: " << test.execution_time << " ms" << std::endl;
 }
 
 // Esegue tutti i test e stampa i risultati
@@ -221,7 +336,7 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size) {
     // Calcola il tempo medio di esecuzione
     double total_time = 0.0;
     for (const auto& test : tests) {
-        total_time += test.execution_time;
+        total_time += test.metrics.execution_time;
     }
     std::cout << "\nAverage execution time: " << (total_time / tests.size()) << " ms" << std::endl;
     std::cout << "Batch size: " << batch_size << " (GPU mode with CUDA optimization)" << std::endl;
@@ -269,6 +384,11 @@ void printUsage() {
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize NVML for GPU metrics
+    if (!initNVML()) {
+        std::cerr << "Warning: Failed to initialize NVML. GPU metrics will not be available." << std::endl;
+    }
+    
     try {
         // Valori predefiniti
         std::string regex = "(0|1)*1"; // Regex predefinita: stringhe binarie che finiscono con 1
@@ -470,14 +590,58 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
+            // Create events for memory transfer timing
+            cudaEvent_t start_transfer, stop_transfer;
+            cudaEventCreate(&start_transfer);
+            cudaEventCreate(&stop_transfer);
+            
+            // Start memory transfer timing
+            cudaEventRecord(start_transfer);
+            
+            // Copy input to device
+            cudaStatus = cudaMemcpy(dev_input_string, input.c_str(), input.length() + 1, cudaMemcpyHostToDevice);
+            if (cudaStatus != cudaSuccess) {
+                std::cerr << "cudaMemcpy failed for dev_input_string: " << cudaGetErrorString(cudaStatus) << std::endl;
+                cudaFree(dev_fsa);
+                cudaFree(dev_input_string);
+                cudaFree(dev_output);
+                return 1;
+            }
+            
+            // Stop memory transfer timing
+            cudaEventRecord(stop_transfer);
+            cudaEventSynchronize(stop_transfer);
+            
+            float transfer_time;
+            cudaEventElapsedTime(&transfer_time, start_transfer, stop_transfer);
+            
             std::cout << "Step 4: Launching kernel..." << std::endl;
+            
+            // Record initial memory usage
+            size_t memory_before = getMemoryUsage();
+            
+            // Create events for kernel timing
+            cudaEvent_t start_kernel, stop_kernel;
+            cudaEventCreate(&start_kernel);
+            cudaEventCreate(&stop_kernel);
+            
+            // Start kernel timing
+            cudaEventRecord(start_kernel);
+            
             auto start_time = std::chrono::high_resolution_clock::now();
-
+            
             // Launch kernel for single string
             dim3 blockDim(256);
             dim3 gridDim(1);
             fsa_kernel<<<gridDim, blockDim>>>(dev_fsa, dev_input_string, dev_output);
-
+            
+            // Stop kernel timing
+            cudaEventRecord(stop_kernel);
+            cudaEventSynchronize(stop_kernel);
+            
+            float kernel_time;
+            cudaEventElapsedTime(&kernel_time, start_kernel, stop_kernel);
+            
             // Check for errors
             cudaStatus = cudaGetLastError();
             if (cudaStatus != cudaSuccess) {
@@ -487,7 +651,7 @@ int main(int argc, char* argv[]) {
                 cudaFree(dev_output);
                 return 1;
             }
-
+            
             cudaStatus = cudaDeviceSynchronize();
             if (cudaStatus != cudaSuccess) {
                 std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(cudaStatus) << std::endl;
@@ -496,11 +660,22 @@ int main(int argc, char* argv[]) {
                 cudaFree(dev_output);
                 return 1;
             }
-
+            
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
             double execution_time_ms = duration.count() / 1000.0;
-
+            
+            // Record post-kernel memory usage
+            size_t memory_after = getMemoryUsage();
+            size_t memory_used = memory_after - memory_before;
+            
+            // Get GPU utilization
+            double gpu_utilization = getGPUUtilization();
+            
+            // Calculate memory bandwidth
+            double total_bytes = sizeof(CUDAFSA) + input.length() + 1 + sizeof(bool);
+            double memory_bandwidth = (total_bytes / transfer_time) * 1000.0 / (1024.0 * 1024.0); // MB/s
+            
             // Get result
             cudaStatus = cudaMemcpy(&host_output, dev_output, sizeof(bool), cudaMemcpyDeviceToHost);
             if (cudaStatus != cudaSuccess) {
@@ -510,13 +685,24 @@ int main(int argc, char* argv[]) {
                 cudaFree(dev_output);
                 return 1;
             }
-
-            // Output results
+            
+            // Output results with enhanced metrics
             std::cout << "Benchmark: CUDA" << std::endl;
             std::cout << "Input String: " << input << std::endl;
             std::cout << "Accepts: " << (host_output ? "true" : "false") << std::endl;
-            std::cout << "Execution Time (ms): " << execution_time_ms << std::endl;
-
+            std::cout << "Execution Time (total): " << execution_time_ms << " ms" << std::endl;
+            std::cout << "Kernel Execution Time: " << kernel_time << " ms" << std::endl;
+            std::cout << "Memory Transfer Time: " << transfer_time << " ms" << std::endl;
+            std::cout << "Memory Used: " << memory_used << " bytes" << std::endl;
+            std::cout << "GPU Utilization: " << gpu_utilization << "%" << std::endl;
+            std::cout << "Memory Bandwidth: " << memory_bandwidth << " MB/s" << std::endl;
+            
+            // Clean up events
+            cudaEventDestroy(start_transfer);
+            cudaEventDestroy(stop_transfer);
+            cudaEventDestroy(start_kernel);
+            cudaEventDestroy(stop_kernel);
+            
             // Free memory
             cudaFree(dev_input_string);
             cudaFree(dev_output);
@@ -533,4 +719,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Unknown exception caught" << std::endl;
         return 1;
     }
+    
+    // Shutdown NVML
+    shutdownNVML();
+    return 0;
 }
