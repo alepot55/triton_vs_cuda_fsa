@@ -16,7 +16,7 @@ def run_cuda_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3):
     for run in range(num_runs):
         print(f"  Run {run+1}/{num_runs}")
         cmd = [
-            "../cuda/bin/fsa_engine_cuda", 
+            "../cuda/fsa_engine_cuda", 
             f"--regex={regex}", 
             f"--input={input_string}",
             f"--batch-size={batch_size}"
@@ -91,7 +91,7 @@ def run_triton_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3
     for run in range(num_runs):
         print(f"  Run {run+1}/{num_runs}")
         cmd = [
-            "python", "../triton/benchmarks/benchmark_fsa.py",
+            "python", "/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/triton/benchmarks/benchmark_fsa.py",
             f"--regex={regex}",
             f"--input={input_string}",
             f"--batch-size={batch_size}"

@@ -11,7 +11,7 @@ plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['font.size'] = 12
 
 # Caricamento dei dati
-results_path = Path('/home/alepot55/Desktop/uni/aca/triton_vs_cuda_fsa/results/benchmark_results.csv')
+results_path = Path('../results/benchmark_results.csv')
 df = pd.read_csv(results_path)
 
 # Conversione del tempo a millisecondi come float
@@ -28,22 +28,39 @@ def analyze_performance():
     print("\n2. STATISTICHE PER IMPLEMENTAZIONE:")
     print(stats_by_impl)
     
-    # Calcolo dello speedup
+    # Calcolo dello speedup (corretto in base ai valori reali)
     cuda_mean = stats_by_impl.loc['CUDA', 'mean']
     triton_mean = stats_by_impl.loc['Triton', 'mean']
-    speedup = cuda_mean / triton_mean
+    # Se Triton è più lento, calcoliamo quanto più lento è CUDA rispetto a Triton
+    if triton_mean > cuda_mean:
+        speedup = triton_mean / cuda_mean
+        speedup_text = f"\n3. RAPPORTO DI VELOCITÀ: Triton è {speedup:.2f}x più lento di CUDA"
+    else:
+        speedup = cuda_mean / triton_mean
+        speedup_text = f"\n3. SPEEDUP DI TRITON RISPETTO A CUDA: {speedup:.2f}x"
     
-    print(f"\n3. SPEEDUP DI TRITON RISPETTO A CUDA: {speedup:.2f}x")
+    print(speedup_text)
     print(f"   Tempo medio di esecuzione CUDA: {cuda_mean:.4f} ms")
     print(f"   Tempo medio di esecuzione Triton: {triton_mean:.4f} ms")
     
     # Informazioni aggiuntive su Triton (se disponibili)
-    triton_info = df[df['implementation'] == 'Triton'].iloc[0]
-    print("\n4. INFORMAZIONI FSA (Triton):")
-    print(f"   - Numero di stati: {triton_info['number_of_states']}")
-    print(f"   - Numero di simboli: {triton_info['number_of_symbols']}")
-    print(f"   - Numero di stati accettanti: {triton_info['number_of_accepting_states']}")
-    print(f"   - Stato iniziale: {triton_info['start_state']}")
+    if df[df['implementation'] == 'Triton'].shape[0] > 0:
+        triton_info = df[df['implementation'] == 'Triton'].iloc[0]
+        print("\n4. INFORMAZIONI FSA (Triton):")
+        
+        # Verifica quali colonne sono disponibili prima di tentare l'accesso
+        fsa_columns = {
+            'input_string': 'String di input',
+            'batch_size': 'Dimensione del batch', 
+            'regex_pattern': 'Pattern regex',
+            'compilation_time_(ms)': 'Tempo di compilazione',
+            'memory_used_(bytes)': 'Memoria utilizzata',
+            'gpu_utilization_(%)': 'Utilizzo GPU'
+        }
+        
+        for col, desc in fsa_columns.items():
+            if col in triton_info and not pd.isna(triton_info[col]):
+                print(f"   - {desc}: {triton_info[col]}")
     
     # Analisi delle variazioni
     cuda_variation = stats_by_impl.loc['CUDA', 'std'] / stats_by_impl.loc['CUDA', 'mean'] * 100
@@ -107,17 +124,28 @@ def main():
     create_visualizations(stats)
     
     print("\n=== CONCLUSIONI ===")
-    print(f"L'implementazione Triton risulta {speedup:.2f} volte più veloce di CUDA")
-    print("Vantaggi di Triton:")
-    print("- Tempi di esecuzione significativamente inferiori")
-    print("- Minore variabilità nelle prestazioni")
-    print("- Implementazione più efficiente per il caso FSA testato")
+    if speedup < 1.0:
+        print(f"L'implementazione CUDA risulta {1/speedup:.2f} volte più veloce di Triton")
+        print("Vantaggi di CUDA:")
+        print("- Tempi di esecuzione significativamente inferiori")
+        print("- Implementazione più efficiente per il caso FSA testato")
+        print("- Maggiore maturità e supporto nell'ecosistema NVIDIA")
+        
+        print("\nSvantaggi di Triton:")
+        print("- Prestazioni inferiori per questo specifico caso d'uso")
+        print("- Potenzialmente più overhead per operazioni semplici")
+    else:
+        print(f"L'implementazione Triton risulta {speedup:.2f} volte più veloce di CUDA")
+        print("Vantaggi di Triton:")
+        print("- Tempi di esecuzione significativamente inferiori")
+        print("- Minore variabilità nelle prestazioni")
+        print("- Implementazione più efficiente per il caso FSA testato")
+        
+        print("\nVantaggi di CUDA:")
+        print("- Maggiore maturità e supporto nell'ecosistema NVIDIA")
+        print("- Potenzialmente più adatto per altri tipi di carichi di lavoro")
     
-    print("\nVantaggi di CUDA:")
-    print("- Maggiore maturità e supporto nell'ecosistema NVIDIA")
-    print("- Potenzialmente più adatto per altri tipi di carichi di lavoro")
-    
-    print("\nQuesta analisi è basata su un numero limitato di campioni (2 per implementazione).")
+    print("\nQuesta analisi è basata su un campione di dati limitato.")
     print("Per risultati più robusti, si consiglia di effettuare ulteriori benchmark con")
     print("più ripetizioni e diverse configurazioni di automi a stati finiti.")
 
