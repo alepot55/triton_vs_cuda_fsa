@@ -11,12 +11,28 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <string>
+#include <numeric>  // Added for std::accumulate
 
 // Add global debug log for conversion details.
 static std::string conversionDebugLog;
 
 std::string getConversionDebugLog() {
     return conversionDebugLog;
+}
+
+// Add this near the top of the file to collect debug information
+std::string debugOutput;
+
+void clearDebugOutput() {
+    debugOutput.clear();
+}
+
+std::string getDebugOutput() {
+    return debugOutput;
+}
+
+void addDebug(const std::string& message) {
+    debugOutput += message + "\n";
 }
 
 // ============ Implementazione della conversione da Regex a NFA ============
@@ -301,73 +317,109 @@ NFA createLiteralNFA(const std::string& literal) {
     return nfa;
 }
 
-// Add or update preprocessRegex function:
+// Improved preprocessRegex to handle negated classes, repetition, and optional operators
 std::string preprocessRegex(const std::string &regex) {
+    clearDebugOutput(); // Reset debug output
     std::string out;
+    addDebug("Original regex: " + regex);
+    
     for (size_t i = 0; i < regex.size(); ) {
-        // Handle negated character classes [^x]
+        // Negated character classes: convert [^0] into ((1)) 
         if (i + 3 < regex.size() && regex[i]=='[' && regex[i+1]=='^' &&
             (regex[i+2]=='0' || regex[i+2]=='1') && regex[i+3]==']') {
             
             char operand = regex[i+2];
             char replacement = (operand=='0') ? '1' : '0';
             
-            // Check if there's a Kleene star after the character class
-            bool hasKleeneStar = (i + 4 < regex.size() && regex[i+4] == '*');
-            
-            // For negated character classes, explicitly handle symbol replacement
-            out += replacement;
-            
-            // Add Kleene star if it was present
-            if (hasKleeneStar) {
-                out += '*';
-                i += 5; // Skip [^c]*
+            // If a Kleene star follows, output grouped version to enforce proper operator precedence.
+            if (i + 4 < regex.size() && regex[i+4] == '*') {
+                out += "((";
+                out.push_back(replacement);
+                out += ")*)";
+                addDebug("Replaced [^" + std::string(1, operand) + "]* with ((replacement))*");
+                i += 5; // Skip the entire [^x]*
             } else {
-                i += 4; // Skip [^c]
+                // Otherwise, just substitute with its complement
+                out.push_back(replacement);
+                addDebug("Replaced [^" + std::string(1, operand) + "] with ((replacement))");
+                i += 4;
             }
-        } 
-        // Handle question mark (optional) operator
-        else if (i > 0 && regex[i] == '?' && !isOperator(regex[i-1])) {
-            out += '?';
-            i++;
         }
         // Handle repetition {n}
-        else if (i + 1 < regex.size() && regex[i] == '{' && isdigit(regex[i+1])) {
-            size_t end = regex.find('}', i);
-            if (end != std::string::npos) {
-                // Process repetition count
-                std::string countStr = regex.substr(i+1, end-i-1);
+        else if (i + 2 < regex.size() && regex[i] == '{' && isdigit(regex[i+1])) {
+            size_t close = regex.find('}', i);
+            if (close != std::string::npos) {
+                std::string countStr = regex.substr(i+1, close-i-1);
                 int count = std::stoi(countStr);
-                
-                // Get the operand that is being repeated
-                char operand = out.back();
-                out.pop_back(); // Remove the operand we'll repeat
-                
-                // Replace {n} with n occurrences of the operand
+                addDebug("Found repetition {" + countStr + "}");
+                std::string operand;
+                // If the char before '{' is a closing parenthesis, extract the entire group.
+                if (!out.empty() && out.back() == ')') {
+                    int depth = 1;
+                    size_t j = out.size() - 2; // start before last ')'
+                    while (j < out.size() && depth > 0) { // j is unsigned so check for underflow using condition j < out.size()
+                        if (out[j] == ')')
+                            depth++;
+                        else if (out[j] == '(')
+                            depth--;
+                        if(depth == 0) break;
+                        if(j==0) break;
+                        j--;
+                    }
+                    size_t groupStart = j;
+                    operand = out.substr(groupStart);
+                    // Remove the extracted group from out
+                    out.erase(groupStart);
+                } else if (!out.empty()) {
+                    // Single character operand
+                    operand = std::string(1, out.back());
+                    out.pop_back();
+                }
+                // Append operand exactly count times
                 for (int j = 0; j < count; j++) {
                     out += operand;
                 }
-                
-                i = end + 1;
+                i = close + 1;
             } else {
-                out.push_back(regex[i]);
-                i++;
+                addDebug("Malformed repetition at position " + std::to_string(i));
+                out.push_back(regex[i++]);
             }
         }
-        else {
-            out.push_back(regex[i]);
+        // Handle optional operator '?'
+        else if (i < regex.size() && regex[i] == '?') {
+            size_t pos = out.rfind('(');
+            if (pos != std::string::npos) {
+                std::string group = out.substr(pos);
+                out.erase(pos);
+                out += "(" + group + "|)";
+                addDebug("Replaced group " + group + "? with (" + group + "|)");
+            } else if (!out.empty()) {
+                char prev = out.back();
+                out.pop_back();
+                out += "(" + std::string(1, prev) + "|)";
+                addDebug("Replaced '" + std::string(1, prev) + "?' with '(" + std::string(1, prev) + "|)'");
+            }
             i++;
         }
+        else {
+            out.push_back(regex[i++]);
+        }
     }
+    
+    addDebug("After preprocessing: " + out);
     return out;
 }
 
-// Modify regexToNFA to call preprocessRegex before expansion:
+// Fix the postfix evaluation to handle more complex expressions
 NFA regexToNFA(const std::string& regex) {
+    clearDebugOutput(); // Reset debug output
+    
     std::string preprocessed = preprocessRegex(regex); // Preprocessing added
     conversionDebugLog += "DEBUG: Preprocessed regex: " + preprocessed + "\n";
     std::string expanded = expandRepetition(preprocessed);
     conversionDebugLog += "DEBUG: Expanded regex: " + expanded + "\n";
+
+    addDebug("Expanded regex: " + expanded);
 
     if (expanded.empty()) {
         NFA emptyNFA;
@@ -399,39 +451,55 @@ NFA regexToNFA(const std::string& regex) {
         // Add explicit concatenation and convert to postfix as before
         std::string processedRegex = addExplicitConcatenation(expanded);
         conversionDebugLog += "DEBUG: Regex with explicit concatenation: " + processedRegex + "\n";
+        addDebug("With explicit concatenation: " + processedRegex);
         std::stack<char> operators;
         std::string postfix;
         for (char c : processedRegex) {
             if (isOperator(c)) {
                 if (c == '(') {
                     operators.push(c);
+                    addDebug("Push ( to operator stack");
                 } else if (c == ')') {
+                    addDebug("Found ), popping operators until matching (");
                     while (!operators.empty() && operators.top() != '(') {
                         postfix += operators.top();
+                        addDebug("Pop " + std::string(1, operators.top()) + " to postfix");
                         operators.pop();
                     }
-                    if (!operators.empty()) operators.pop();
+                    if (!operators.empty()) {
+                        addDebug("Pop ( from stack");
+                        operators.pop();
+                    } else {
+                        addDebug("ERROR: Mismatched parentheses - missing (");
+                    }
                 } else {
                     int precedence = getPrecedence(c);
+                    addDebug("Operator " + std::string(1, c) + " with precedence " + std::to_string(precedence));
                     while (!operators.empty() && operators.top() != '(' && getPrecedence(operators.top()) >= precedence) {
                         postfix += operators.top();
+                        addDebug("Pop " + std::string(1, operators.top()) + " to postfix (higher precedence)");
                         operators.pop();
                     }
                     operators.push(c);
+                    addDebug("Push " + std::string(1, c) + " to operator stack");
                 }
             } else {
                 postfix += c;
+                addDebug("Add " + std::string(1, c) + " directly to postfix");
             }
         }
         while (!operators.empty()) {
             if (operators.top() == '(') {
+                addDebug("ERROR: Mismatched parentheses - extra (");
                 throw std::runtime_error("Mismatched parentheses in regex");
             }
             postfix += operators.top();
+            addDebug("Pop remaining " + std::string(1, operators.top()) + " to postfix");
             operators.pop();
         }
         
         conversionDebugLog += "DEBUG: Postfix expression: " + postfix + "\n";
+        addDebug("Final postfix expression: " + postfix);
         std::stack<NFA> nfaStack;
         for (char token : postfix) {
             if (isOperator(token)) {
@@ -489,6 +557,7 @@ NFA regexToNFA(const std::string& regex) {
         return nfaStack.top();
     }
     catch (const std::exception& e) {
+        addDebug("ERROR: " + std::string(e.what()));
         std::cerr << "Error in NFA construction: " << e.what() << std::endl;
         NFA fallbackNFA;
         int start = fallbackNFA.addState(true);
@@ -542,7 +611,6 @@ std::set<int> move(const NFA& nfa, const std::set<int>& states, char symbol) {
 }
 
 FSA NFAtoDFA(const NFA& nfa) {
-    
     FSA dfa;
     std::map<std::set<int>, int> dfaStates;
     std::queue<std::set<int>> unmarkedStates;
@@ -571,6 +639,11 @@ FSA NFAtoDFA(const NFA& nfa) {
     
     // Start with epsilon-closure of the start state
     std::set<int> initialState = epsilonClosure(nfa, {nfa.start_state});
+    addDebug("Initial DFA state set: {" + 
+           std::accumulate(initialState.begin(), initialState.end(), std::string(),
+                         [](const std::string& a, int b) {
+                             return a.empty() ? std::to_string(b) : a + "," + std::to_string(b);
+                         }) + "}");
     dfaStates[initialState] = 0;  // Assign 0 as the ID of the initial DFA state
     unmarkedStates.push(initialState);
     dfa.start_state = 0;
@@ -596,11 +669,11 @@ FSA NFAtoDFA(const NFA& nfa) {
         // For each symbol in the alphabet
         int symbolIdx = 0;
         for (char symbol : alphabet) {
-            // Compute the next state set using more precise move and epsilon-closure
+            // Compute the next state set using move and epsilon-closure
             std::set<int> nextStateSet = epsilonClosure(nfa, move(nfa, currentStateSet, symbol));
             
             if (nextStateSet.empty()) {
-                // Create a trap state for invalid transitions
+                // Create a trap state for invalid transitions if needed
                 if (trapState == -1) {
                     trapState = dfaStates.size();
                     dfaStates[std::set<int>()] = trapState;
@@ -627,14 +700,16 @@ FSA NFAtoDFA(const NFA& nfa) {
                         dfa.transition_function.push_back(std::vector<int>(alphabet.size(), -1));
                     }
                 }
+                
                 // Add the transition
                 dfa.transition_function[currentDfaState][symbolIdx] = dfaStates[nextStateSet];
             }
+            
             symbolIdx++;
         }
     }
     
-    // Determine accepting states - only mark states containing NFA accepting states
+    // Determine accepting states - mark states containing NFA accepting states
     dfa.accepting_states.clear();
     for (const auto& [stateSet, dfaState] : dfaStates) {
         // Check if any NFA state in the set is accepting
@@ -645,7 +720,9 @@ FSA NFAtoDFA(const NFA& nfa) {
             }
         }
     }
+    
     dfa.num_states = dfaStates.size();
+    dfa.num_alphabet_symbols = alphabet.size();
     
     // Safety check for extremely large DFAs
     if (dfa.num_states > 10000) {

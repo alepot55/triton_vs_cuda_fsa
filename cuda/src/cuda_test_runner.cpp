@@ -9,6 +9,9 @@
 // Forward declaration for conversion debug log getter defined in regex_conversion.cpp
 extern std::string getConversionDebugLog();
 
+// Forward declaration for debug output getter
+extern std::string getDebugOutput();
+
 // Implementation of test runner for CUDA
 void runTest(TestCase& test, int batch_size, bool verbose) {
     if (verbose) {
@@ -23,6 +26,9 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
         
         // Convert regex to FSA
         FSA fsa = FSAEngine::regexToDFA(test.regex);
+        
+        // For debugging, run on CPU as well to compare
+        bool cpuResult = FSAEngine::runDFA(fsa, test.input);
         
         if (batch_size == 1) {
             // Direct test using runSingleTest
@@ -46,13 +52,45 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
                       << test.metrics.execution_time_ms << " ms" << std::endl;
         }
         
-        // Add debug output for failing tests
+        // Enhanced debug output for failing tests
         if (test.actual_result != test.expected_result) {
             std::cerr << "Test failed: " << test.name << std::endl;
             std::cerr << "  Regex: " << test.regex << std::endl;
             std::cerr << "  Input: " << test.input << std::endl;
             std::cerr << "  Expected: " << (test.expected_result ? "true" : "false") << std::endl;
             std::cerr << "  Got: " << (test.actual_result ? "true" : "false") << std::endl;
+            std::cerr << "  CPU result: " << (cpuResult ? "true" : "false") << std::endl;
+            
+            // Print detailed FSA information for failing tests
+            std::cerr << "  FSA details: " << std::endl;
+            std::cerr << "    Start state: " << fsa.start_state << std::endl;
+            std::cerr << "    Num states: " << fsa.num_states << std::endl;
+            std::cerr << "    Accepting states: ";
+            for (auto s : fsa.accepting_states) {
+                std::cerr << s << " ";
+            }
+            std::cerr << std::endl;
+            
+            // Print transitions for small FSAs
+            if (fsa.num_states < 10) {
+                std::cerr << "    Transitions: " << std::endl;
+                for (int state = 0; state < fsa.num_states; ++state) {
+                    if (state < static_cast<int>(fsa.transition_function.size())) {
+                        for (int symbol = 0; symbol < fsa.num_alphabet_symbols; ++symbol) {
+                            if (symbol < static_cast<int>(fsa.transition_function[state].size())) {
+                                int next = fsa.transition_function[state][symbol];
+                                if (next >= 0) {
+                                    std::cerr << "      δ(" << state << ", " << symbol << ") = " << next << std::endl;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Print regex conversion debug output
+            std::cerr << "  Regex conversion debug: " << std::endl;
+            std::cerr << getDebugOutput();
         }
         
     } catch (const std::exception& e) {
