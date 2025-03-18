@@ -159,27 +159,20 @@ std::string expandRepetition(const std::string regex) {
             if (i > 0 && result.length() > 0) {
                 if (result.back() == ')') {
                     // Find matching '(' in result
-                    int depth = 1;
-                    size_t pos = result.size() - 1;
-                    while (pos > 0 && depth > 0) {
-                        if (result[pos] == ')')
-                            depth++;
-                        else if (result[pos] == '(')
+                    int depth = 0;
+                    size_t pos = result.size()-1;
+                    for (; pos < result.size(); pos--) {
+                        if (result[pos] == ')') depth++;
+                        else if (result[pos] == '(') {
                             depth--;
-                        if (pos == 0)
-                            break;
-                        pos--;
-                        if (depth == 0)
-                            break;
+                            if (depth == 0) break;
+                        }
+                        if (pos == 0) break;
                     }
-                    
-                    if (depth == 0) {
-                        pos++; // Adjust to the opening parenthesis
-                        operand = result.substr(pos);
-                        result.erase(pos);
-                    } else {
+                    if (depth != 0)
                         throw std::runtime_error("Mismatched parentheses for repetition");
-                    }
+                    operand = result.substr(pos);
+                    result.erase(pos);
                 } else {
                     // Use the last character as operand
                     operand = result.substr(result.size()-1);
@@ -231,28 +224,24 @@ std::string preprocessRegex(const std::string regex) {
             }
         }
         // Handle optional operator '?' by converting to alternation (a|ε)
-        else if (i > 0 && regex[i] == '?') {
-            // If preceding char is ')', find the matching '('
+        else if (regex[i] == '?') {
+            // If the preceding char is ')', find the matching '(' using an int index.
             if (i > 0 && regex[i-1] == ')') {
-                int balance = 1;
-                size_t j = i - 2;
-                while (j < regex.size() && balance > 0) { // j is unsigned, so check for underflow
-                    if (regex[j] == ')')
-                        balance++;
-                    else if (regex[j] == '(')
-                        balance--;
-                    if (balance == 0)
-                        break;
-                    if (j == 0)
-                        break;
-                    j--;
+                int depth = 0;
+                int j = static_cast<int>(i) - 1; 
+                for (; j >= 0; j--) {
+                    if (regex[j] == ')') depth++;
+                    else if (regex[j] == '(') {
+                        depth--;
+                        if (depth == 0) break;
+                    }
                 }
-
-                if (balance == 0) {
-                    std::string group = regex.substr(j, i - j);
-                    out = out.substr(0, out.size() - group.size()) + "(" + group + "|ε)";
-                    addDebug("Replaced group " + group + "? with (" + group + "|ε)");
+                if (depth != 0 || j < 0) {
+                    throw std::runtime_error("Mismatched parentheses for optional operator");
                 }
+                std::string group = regex.substr(j, i - j);
+                out = out.substr(0, out.size() - group.size()) + "(" + group + "|ε)";
+                addDebug("Replaced group " + group + "? with (" + group + "|ε)");
             } else {
                 // Regular case - replace 'a?' with '(a|ε)'
                 char prev = out.back();
@@ -495,20 +484,16 @@ NFA regexToNFA(const std::string& regex) {
 
     std::string preprocessed = preprocessRegex(regex);
     conversionDebugLog += "DEBUG: Preprocessed regex: " + preprocessed + "\n";
-    
-    std::string expanded = preprocessed;  // now contiene eventuali token {n} invariati
+    // NEW: Expand repetition tokens before further processing.
+    std::string expanded = expandRepetition(preprocessed);
     conversionDebugLog += "DEBUG: Expanded regex: " + expanded + "\n";
     addDebug("Expanded regex: " + expanded);
-
-    // Rest of the function remains the same
-    // ...existing code...
-
+    
+    // If regex is empty, produce an NFA with a single accepting state.
     if (expanded.empty()) {
         NFA emptyNFA;
-        int start = emptyNFA.addState();
-        int accept = emptyNFA.addState(true);
+        int start = emptyNFA.addState(true);
         emptyNFA.start_state = start;
-        emptyNFA.addEpsilonTransition(start, accept);
         return emptyNFA;
     }
 
@@ -881,8 +866,14 @@ FSA FSAEngine::regexToDFA(const std::string& regex) {
 }
 
 bool FSAEngine::runDFA(const FSA& fsa, const std::string& input) {
-    if (fsa.num_states == 0 || fsa.alphabet.empty()) {
-        return false; // DFA vuoto rifiuta tutto
+    // If input is empty, check acceptance regardless of the alphabet.
+    if (input.empty()) {
+        return std::find(fsa.accepting_states.begin(),
+                         fsa.accepting_states.end(),
+                         fsa.start_state) != fsa.accepting_states.end();
+    }
+    if (fsa.num_states == 0) { // Previously also checked fsa.alphabet.empty(), now omit that.
+        return false;
     }
 
     int currentState = fsa.start_state;
