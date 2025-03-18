@@ -425,7 +425,6 @@ NFA applyKleeneStar(const NFA& nfa) {
 
     // Create special structure to handle repetitions correctly
     int start = result.addState(true); // Make start state accepting for *
-    int accept = start; //result.addState(true);
     result.start_state = start;
 
     // Add original NFA states

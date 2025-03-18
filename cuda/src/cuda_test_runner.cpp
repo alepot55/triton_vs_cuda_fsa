@@ -18,6 +18,7 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
         std::cout << "Running test: " << test.name << std::endl;
         std::cout << "  Regex: " << test.regex << std::endl;
         std::cout << "  Input: " << test.input << std::endl;
+        std::cout << "  Expected: " << (test.expected_result ? "true" : "false") << std::endl;
     }
     
     try {
@@ -29,11 +30,14 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
         // For debugging, run on CPU as well to compare
         bool cpuResult = FSAEngine::runDFA(fsa, test.input);
         
-        // Set the expected result from CPU execution
-        test.expected_result = cpuResult;
+        // Keep the expected result from the test file
+        // No need to set test.expected_result here, as it's already set from the test file
         
         if (verbose) {
-            std::cout << "  Expected (CPU): " << (test.expected_result ? "true" : "false") << std::endl;
+            std::cout << "  CPU result: " << (cpuResult ? "true" : "false") << std::endl;
+            if (cpuResult != test.expected_result) {
+                std::cout << "  ⚠️ CPU result differs from expected result!" << std::endl;
+            }
         }
         
         if (batch_size == 1) {
@@ -63,7 +67,7 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
             std::cerr << "Test failed: " << test.name << std::endl;
             std::cerr << "  Regex: " << test.regex << std::endl;
             std::cerr << "  Input: " << test.input << std::endl;
-            std::cerr << "  Expected (CPU): " << (test.expected_result ? "true" : "false") << std::endl;
+            std::cerr << "  Expected: " << (test.expected_result ? "true" : "false") << std::endl;
             std::cerr << "  Got (GPU): " << (test.actual_result ? "true" : "false") << std::endl;
             std::cerr << "  CPU result: " << (cpuResult ? "true" : "false") << std::endl;
             
