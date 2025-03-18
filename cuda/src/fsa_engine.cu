@@ -21,15 +21,17 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
         char c = input_string[i];
         int symbol = -1;
 
-        // Character to symbol mapping - in binary alphabet:
-        // Character '0' maps to symbol 0, character '1' maps to symbol 1
-        // This must match the regex engine's symbol mapping
-        if (c == '0') symbol = 0;
-        else if (c == '1') symbol = 1;
-        else {
-            // Invalid character in binary alphabet
-            output[thread_id] = false;
-            return;
+        // Modified: use single-symbol mapping if applicable
+        if (fsa->num_alphabet_symbols == 1) {
+            symbol = 0;
+        } else {
+            if (c == '0') symbol = 0;
+            else if (c == '1') symbol = 1;
+            else {
+                // Invalid character in binary alphabet
+                output[thread_id] = false;
+                return;
+            }
         }
 
         // Verify symbol validity
@@ -76,14 +78,18 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
     // Process each character
     for (int i = 0; i < length; i++) {
         char c = input_strings[offset + i];
-        int symbol;
+        int symbol = -1;
 
-        // Character to symbol mapping - match the regex engine
-        if (c == '0') symbol = 0;
-        else if (c == '1') symbol = 1;
-        else {
-            results[tid] = 0;
-            return;
+        // Modified: use single-symbol mapping if only one symbol is used
+        if (dfa->num_symbols == 1) {
+            symbol = 0;
+        } else {
+            if (c == '0') symbol = 0;
+            else if (c == '1') symbol = 1;
+            else {
+                results[tid] = 0;
+                return;
+            }
         }
 
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
@@ -115,14 +121,18 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
     // Process each character
     for (int i = 0; i < string_length; i++) {
         char c = input_strings[offset + i];
-        int symbol;
+        int symbol = -1;
 
-        // Character to symbol mapping - match the regex engine
-        if (c == '0') symbol = 0;
-        else if (c == '1') symbol = 1;
-        else {
-            results[tid] = 0;
-            return;
+        // Modified: use single-symbol mapping if applicable
+        if (dfa->num_symbols == 1) {
+            symbol = 0;
+        } else {
+            if (c == '0') symbol = 0;
+            else if (c == '1') symbol = 1;
+            else {
+                results[tid] = 0;
+                return;
+            }
         }
 
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
