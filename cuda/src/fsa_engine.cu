@@ -16,14 +16,19 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
     for (int i = 0; input_string[i] != '\0'; i++) {
         char c = input_string[i];
         int symbol = -1;
-        // Correct symbol mapping: '0' -> index 0, '1' -> index 1
-        if (c == '0')
+        // NEW: if only one symbol is used, map any input to index 0
+        if (fsa->num_alphabet_symbols == 1) {
             symbol = 0;
-        else if (c == '1')
-            symbol = 1;
-        else {
-            output[thread_id] = false;
-            return;
+        } else {
+            // Normal mapping for two symbols: '0'->0, '1'->1
+            if (c == '0')
+                symbol = 0;
+            else if (c == '1')
+                symbol = 1;
+            else {
+                output[thread_id] = false;
+                return;
+            }
         }
         if (symbol >= fsa->num_alphabet_symbols) {
             output[thread_id] = false;
@@ -57,12 +62,15 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
     for (int i = 0; i < length; i++) {
         char c = input_strings[offset + i];
         int symbol = -1;
-        // Correct symbol mapping: '0' -> index 0, '1' -> index 1
-        if (c == '0')
+        if (dfa->num_symbols == 1) {
             symbol = 0;
-        else if (c == '1')
-            symbol = 1;
-        else { results[tid] = 0; return; }
+        } else {
+            if (c == '0')
+                symbol = 0;
+            else if (c == '1')
+                symbol = 1;
+            else { results[tid] = 0; return; }
+        }
         if (symbol >= dfa->num_symbols) { results[tid] = 0; return; }
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
         int next_state = dfa->transition_table[transition_idx];
@@ -81,12 +89,15 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
     for (int i = 0; i < string_length; i++) {
         char c = input_strings[offset + i];
         int symbol = -1;
-        // Correct symbol mapping: '0' -> index 0, '1' -> index 1
-        if (c == '0')
+        if (dfa->num_symbols == 1) {
             symbol = 0;
-        else if (c == '1')
-            symbol = 1;
-        else { results[tid] = 0; return; }
+        } else {
+            if (c == '0')
+                symbol = 0;
+            else if (c == '1')
+                symbol = 1;
+            else { results[tid] = 0; return; }
+        }
         if (symbol >= dfa->num_symbols) { results[tid] = 0; return; }
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
         int next_state = dfa->transition_table[transition_idx];
