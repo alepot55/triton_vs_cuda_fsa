@@ -6,13 +6,18 @@
 #include <unordered_map>
 #include <cuda_runtime.h>
 #include <iostream>
+#include <cassert>
 
 // **Funzione Helper per Appiattire la Matrice di Transizione**
-static std::vector<int> flattenTransitionMatrix(const FSA& fsa) {
+static std::vector<int> flattenTransitionMatrix(const FSA &fsa)
+{
     std::vector<int> flat(fsa.num_states * fsa.num_alphabet_symbols, -1);
-    for (int i = 0; i < fsa.num_states; i++) {
-        for (int j = 0; j < fsa.num_alphabet_symbols; j++) {
-            if (j < static_cast<int>(fsa.transition_function[i].size())) {
+    for (int i = 0; i < fsa.num_states; i++)
+    {
+        for (int j = 0; j < fsa.num_alphabet_symbols; j++)
+        {
+            if (j < static_cast<int>(fsa.transition_function[i].size()))
+            {
                 flat[i * fsa.num_alphabet_symbols + j] = fsa.transition_function[i][j];
             }
         }
@@ -21,19 +26,23 @@ static std::vector<int> flattenTransitionMatrix(const FSA& fsa) {
 }
 
 // Macro per controllo errori CUDA
-#define CUDA_CHECK(call) { \
-    cudaError_t err = (call); \
-    if(err != cudaSuccess) { \
-        std::cerr << "CUDA error in " << __FILE__ << " at line " << __LINE__ << ": " \
-                  << cudaGetErrorString(err) << std::endl; \
-    } \
-}
+#define CUDA_CHECK(call)                                                                 \
+    {                                                                                    \
+        cudaError_t err = (call);                                                        \
+        if (err != cudaSuccess)                                                          \
+        {                                                                                \
+            std::cerr << "CUDA error in " << __FILE__ << " at line " << __LINE__ << ": " \
+                      << cudaGetErrorString(err) << std::endl;                           \
+        }                                                                                \
+    }
 
 // **Namespace CUDAFSAEngine**
-namespace CUDAFSAEngine {
+namespace CUDAFSAEngine
+{
 
     // **Conversione da FSA a CUDAFSA**
-    CUDAFSA convertToCUDAFSA(const FSA& fsa) {
+    CUDAFSA convertToCUDAFSA(const FSA &fsa)
+    {
         CUDAFSA cuda_fsa;
         cuda_fsa.num_states = fsa.num_states;
         cuda_fsa.num_alphabet_symbols = fsa.num_alphabet_symbols;
@@ -46,7 +55,8 @@ namespace CUDAFSAEngine {
     }
 
     // **Preparazione del DFA per la GPU**
-    GPUDFA prepareGPUDFA(const FSA& fsa) {
+    GPUDFA prepareGPUDFA(const FSA &fsa)
+    {
         GPUDFA gpu_dfa;
         gpu_dfa.num_states = fsa.num_states;
         gpu_dfa.num_symbols = fsa.num_alphabet_symbols;
@@ -54,40 +64,47 @@ namespace CUDAFSAEngine {
 
         // Copia la matrice di transizione appiattita
         std::vector<int> flat = flattenTransitionMatrix(fsa);
-        memcpy(gpu_dfa.transition_table, flat.data(), MAX_STATES * MAX_SYMBOLS * sizeof(int));
+        assert(fsa.num_states * fsa.num_alphabet_symbols <= MAX_STATES * MAX_SYMBOLS);
+        memcpy(gpu_dfa.transition_table, flat.data(), fsa.num_states * fsa.num_alphabet_symbols * sizeof(int));
 
         // Imposta gli stati accettanti
         memset(gpu_dfa.accepting_states, 0, MAX_STATES * sizeof(bool));
-        for (int state : fsa.accepting_states) {
-            if (state >= 0 && state < MAX_STATES) {
+        for (int state : fsa.accepting_states)
+        {
+            if (state >= 0 && state < MAX_STATES)
+            {
                 gpu_dfa.accepting_states[state] = true;
             }
         }
 
         // Copia l'alfabeto
+        assert(fsa.num_alphabet_symbols <= MAX_SYMBOLS);
         memcpy(gpu_dfa.alphabet, fsa.alphabet.data(), fsa.num_alphabet_symbols * sizeof(char));
         return gpu_dfa;
     }
 
     // **Esecuzione Batch sulla GPU**
-    std::vector<bool> runBatchOnGPU(const FSA& fsa, const std::vector<std::string>& inputs) {
-        if (inputs.empty()) {
+    std::vector<bool> runBatchOnGPU(const FSA &fsa, const std::vector<std::string> &inputs)
+    {
+        if (inputs.empty())
+        {
             return std::vector<bool>();
         }
 
         // Prepara il DFA per la GPU
         GPUDFA gpu_dfa = prepareGPUDFA(fsa);
-        GPUDFA* d_dfa;
-        CUDA_CHECK(cudaMalloc(&d_dfa, sizeof(GPUDFA)));
-        CUDA_CHECK(cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice));
+        GPUDFA *d_dfa;
+        cudaMalloc(&d_dfa, sizeof(GPUDFA));
+        cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice);
 
         // Prepara i dati di input
         std::vector<char> input_strings;
         std::vector<int> string_lengths(inputs.size());
         std::vector<int> string_offsets(inputs.size());
         int offset = 0;
-        for (size_t i = 0; i < inputs.size(); i++) {
-            const std::string& str = inputs[i];
+        for (size_t i = 0; i < inputs.size(); i++)
+        {
+            const std::string &str = inputs[i];
             string_lengths[i] = str.size();
             string_offsets[i] = offset;
             input_strings.insert(input_strings.end(), str.begin(), str.end());
@@ -95,101 +112,120 @@ namespace CUDAFSAEngine {
         }
 
         // Alloca memoria sul device
-        char* d_input_strings;
-        int* d_string_lengths;
-        int* d_string_offsets;
-        char* d_results;
-        CUDA_CHECK(cudaMalloc(&d_input_strings, input_strings.size() * sizeof(char)));
-        CUDA_CHECK(cudaMalloc(&d_string_lengths, string_lengths.size() * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&d_string_offsets, string_offsets.size() * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&d_results, inputs.size() * sizeof(char)));
+        char *d_input_strings;
+        int *d_string_lengths;
+        int *d_string_offsets;
+        char *d_results;
+        cudaMalloc(&d_input_strings, input_strings.size() * sizeof(char));
+        cudaMalloc(&d_string_lengths, string_lengths.size() * sizeof(int));
+        cudaMalloc(&d_string_offsets, string_offsets.size() * sizeof(int));
+        cudaMalloc(&d_results, inputs.size() * sizeof(char));
 
         // Copia i dati sul device
-        CUDA_CHECK(cudaMemcpy(d_input_strings, input_strings.data(), input_strings.size() * sizeof(char), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_string_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_string_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice));
+        cudaMemcpy(d_input_strings, input_strings.data(), input_strings.size() * sizeof(char), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_string_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_string_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice);
 
         // Configura e lancia il kernel
         int num_strings = inputs.size();
         int block_size = 256;
         int grid_size = (num_strings + block_size - 1) / block_size;
-        fsa_kernel_batch<<<grid_size, block_size>>>(d_dfa, d_input_strings, d_string_lengths, d_string_offsets, num_strings, d_results);
-        CUDA_CHECK(cudaDeviceSynchronize());
-        CUDA_CHECK(cudaGetLastError());
+        fsa_kernel_batch<<<grid_size, block_size>>>(d_dfa, d_input_strings, d_string_lengths,
+                                                    d_string_offsets, num_strings, d_results);
+        cudaDeviceSynchronize();
+
+        // Controlla errori CUDA
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "Errore CUDA: " << cudaGetErrorString(err) << std::endl;
+            exit(1);
+        }
 
         // Copia i risultati sul host
         std::vector<char> results(num_strings);
-        CUDA_CHECK(cudaMemcpy(results.data(), d_results, num_strings * sizeof(char), cudaMemcpyDeviceToHost));
+        cudaMemcpy(results.data(), d_results, num_strings * sizeof(char), cudaMemcpyDeviceToHost);
 
         // Converte i risultati in bool
         std::vector<bool> bool_results(num_strings);
-        for (int i = 0; i < num_strings; i++) {
+        for (int i = 0; i < num_strings; i++)
+        {
             bool_results[i] = (results[i] != 0);
         }
 
         // Libera la memoria
-        CUDA_CHECK(cudaFree(d_dfa));
-        CUDA_CHECK(cudaFree(d_input_strings));
-        CUDA_CHECK(cudaFree(d_string_lengths));
-        CUDA_CHECK(cudaFree(d_string_offsets));
-        CUDA_CHECK(cudaFree(d_results));
+        cudaFree(d_dfa);
+        cudaFree(d_input_strings);
+        cudaFree(d_string_lengths);
+        cudaFree(d_string_offsets);
+        cudaFree(d_results);
 
         return bool_results;
     }
 
     // **Esecuzione Singola sulla GPU**
-    bool runDFA(const FSA& fsa, const std::string& input) {
-        std::vector<std::string> inputs = {input};  // Crea un batch con una sola stringa
+    bool runDFA(const FSA &fsa, const std::string &input)
+    {
+        std::vector<std::string> inputs = {input}; // Crea un batch con una sola stringa
         std::vector<bool> results = runBatchOnGPU(fsa, inputs);
-        return results[0];  // Restituisce il risultato della singola stringa
+        return results[0]; // Restituisce il risultato della singola stringa
     }
 
     // **Conversione da Regex a DFA**
-    FSA regexToDFA(const std::string& regex) {
-        return FSAEngine::regexToDFA(regex);  // Eseguito sulla CPU
+    FSA regexToDFA(const std::string &regex)
+    {
+        return FSAEngine::regexToDFA(regex); // Eseguito sulla CPU
     }
 
     // **Test Singolo**
-    bool runSingleTest(const std::string& regex, const std::string& input) {
-        FSA fsa = regexToDFA(regex);  // Conversione sulla CPU
-        return runDFA(fsa, input);    // Esecuzione sulla GPU
+    bool runSingleTest(const std::string &regex, const std::string &input)
+    {
+        FSA fsa = regexToDFA(regex); // Conversione sulla CPU
+        return runDFA(fsa, input);   // Esecuzione sulla GPU
     }
 }
 
 // **Kernel CUDA**
 #ifdef __CUDACC__
-__global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings, 
-                                 const int* string_lengths, const int* string_offsets,
-                                 int num_strings, char* results) {
+__global__ void fsa_kernel_batch(const GPUDFA *dfa, const char *input_strings,
+                                  const int *string_lengths, const int *string_offsets,
+                                  int num_strings, char *results)
+{
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx >= num_strings) return;
+    if (idx >= num_strings)
+        return; // Evita accessi oltre il numero di stringhe
 
     int offset = string_offsets[idx];
     int length = string_lengths[idx];
     int current_state = dfa->start_state;
 
-    // Elabora la stringa
-    for (int i = 0; i < length; i++) {
+    // Elabora ogni simbolo della stringa
+    for (int i = 0; i < length; i++)
+    {
         char symbol = input_strings[offset + i];
         int symbol_idx = -1;
 
-        // Trova l'indice del simbolo nell'alfabeto
-        for (int j = 0; j < dfa->num_symbols; j++) {
-            if (symbol == dfa->alphabet[j]) {
+        // Cerca il simbolo nell'alfabeto
+        for (int j = 0; j < dfa->num_symbols; j++)
+        {
+            if (symbol == dfa->alphabet[j])
+            {
                 symbol_idx = j;
                 break;
             }
         }
 
         // Se il simbolo non è nell'alfabeto o lo stato è invalido, rifiuta
-        if (symbol_idx == -1 || current_state < 0 || current_state >= dfa->num_states) {
+        if (symbol_idx == -1 || current_state < 0 || current_state >= dfa->num_states)
+        {
             results[idx] = 0;
             return;
         }
 
         // Calcola il prossimo stato
         int next_state = dfa->transition_table[current_state * dfa->num_symbols + symbol_idx];
-        if (next_state == -1) {
+        if (next_state == -1)
+        {
             results[idx] = 0;
             return;
         }
@@ -197,6 +233,9 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
     }
 
     // Verifica se lo stato finale è accettante
-    results[idx] = (current_state >= 0 && current_state < dfa->num_states && dfa->accepting_states[current_state]) ? 1 : 0;
+    results[idx] = (current_state >= 0 && current_state < dfa->num_states &&
+                    dfa->accepting_states[current_state])
+                       ? 1
+                       : 0;
 }
 #endif

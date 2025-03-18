@@ -182,14 +182,23 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
     std::cout << "  Average execution time: " << std::fixed << std::setprecision(3)
               << (tests.empty() ? 0 : (total_time / tests.size())) << " ms per test" << std::endl;
     
+    // Enhanced failure reporting
     if (!failedTests.empty()) {
-        std::cout << "\nFailed tests: ";
-        for (size_t i = 0; i < failedTests.size(); ++i) {
-            std::cout << failedTests[i] << (i < failedTests.size() - 1 ? ", " : "");
+        std::cout << "\nFailed tests (" << failedTests.size() << "/" << tests.size() << "):" << std::endl;
+        
+        // Print details of failed tests, even in non-verbose mode
+        for (const auto& test : tests) {
+            if (test.actual_result != test.expected_result) {
+                std::cout << "  - " << test.name << ":" << std::endl;
+                std::cout << "    Regex: " << test.regex << std::endl;
+                std::cout << "    Input: '" << test.input << "'" << std::endl;
+                std::cout << "    Expected: " << (test.expected_result ? "ACCEPT" : "REJECT") << std::endl;
+                std::cout << "    Got: " << (test.actual_result ? "ACCEPT" : "REJECT") << std::endl;
+            }
         }
-        std::cout << std::endl;
     }
     
+    // Only show the detailed results for all tests when in verbose mode
     if (verbose) {
         std::cout << "\nDetailed Results:" << std::endl;
         for (const auto& test : tests) {
