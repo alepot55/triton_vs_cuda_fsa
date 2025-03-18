@@ -919,3 +919,70 @@ bool FSAEngine::runDFA(const FSA& fsa, const std::string& input) {
                      fsa.accepting_states.end(),
                      currentState) != fsa.accepting_states.end();
 }
+
+extern "C" FSA* regex_to_fsa(const char* regex) {
+    try {
+        FSAEngine engine;
+        FSA fsa = engine.regexToDFA(regex);
+        // Alloca memoria per FSA e copia i dati
+        FSA* fsa_ptr = new FSA;
+        *fsa_ptr = fsa;
+        return fsa_ptr;
+    } catch (const std::exception& e) {
+        std::cerr << "Errore in regex_to_fsa: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+extern "C" void free_fsa(FSA* fsa) {
+    delete fsa;
+}
+
+struct FSAData {
+    int num_states;
+    int num_alphabet_symbols;
+    int* transition_function; // Array 1D: [state * num_symbols + symbol]
+    int transition_function_size;
+    int start_state;
+    int* accepting_states;
+    int accepting_states_size;
+    char* alphabet;
+    int alphabet_size;
+};
+
+extern "C" FSAData* fsa_to_data(const FSA& fsa) {
+    FSAData* data = new FSAData;
+    data->num_states = fsa.num_states;
+    data->num_alphabet_symbols = fsa.num_alphabet_symbols;
+    data->start_state = fsa.start_state;
+
+    // Appiattisci transition_function
+    data->transition_function_size = fsa.num_states * fsa.num_alphabet_symbols;
+    data->transition_function = new int[data->transition_function_size];
+    for (int state = 0; state < fsa.num_states; ++state) {
+        for (int symbol = 0; symbol < fsa.num_alphabet_symbols; ++symbol) {
+            data->transition_function[state * fsa.num_alphabet_symbols + symbol] = fsa.transition_function[state][symbol];
+        }
+    }
+
+    // Copia accepting_states
+    data->accepting_states_size = fsa.accepting_states.size();
+    data->accepting_states = new int[data->accepting_states_size];
+    std::copy(fsa.accepting_states.begin(), fsa.accepting_states.end(), data->accepting_states);
+
+    // Copia alphabet
+    data->alphabet_size = fsa.alphabet.size();
+    data->alphabet = new char[data->alphabet_size];
+    std::copy(fsa.alphabet.begin(), fsa.alphabet.end(), data->alphabet);
+
+    return data;
+}
+
+extern "C" void free_fsa_data(FSAData* data) {
+    if (data) {
+        delete[] data->transition_function;
+        delete[] data->accepting_states;
+        delete[] data->alphabet;
+        delete data;
+    }
+}

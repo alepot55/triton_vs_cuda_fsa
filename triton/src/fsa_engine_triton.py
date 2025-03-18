@@ -1,136 +1,214 @@
 import triton
 import triton.language as tl
 import numpy as np
-import time
 import torch
+import time
 import psutil
+import ctypes
+import subprocess
+from typing import Optional
 
+# Carica la libreria condivisa
+lib = ctypes.CDLL('./regex_conversion.so')
+
+# Definizione della struttura FSAData
+class FSAData(ctypes.Structure):
+    _fields_ = [
+        ("num_states", ctypes.c_int),
+        ("num_alphabet_symbols", ctypes.c_int),
+        ("transition_function", ctypes.POINTER(ctypes.c_int)),
+        ("transition_function_size", ctypes.c_int),
+        ("start_state", ctypes.c_int),
+        ("accepting_states", ctypes.POINTER(ctypes.c_int)),
+        ("accepting_states_size", ctypes.c_int),
+        ("alphabet", ctypes.POINTER(ctypes.c_char)),
+        ("alphabet_size", ctypes.c_int),
+    ]
+
+lib.fsa_to_data.restype = ctypes.POINTER(FSAData)
+lib.free_fsa_data.argtypes = [ctypes.POINTER(FSAData)]
+
+# costante per tl.pointer_type(tl.int32)
+INT32 = tl.int32
+POINTER_INT32 = tl.pointer_type(tl.int32)
+INT1 = tl.int1
+POINTER_INT1 = tl.pointer_type(tl.int1)
+
+# Classe per le metriche di benchmark
 class BenchmarkMetrics:
-    """Class to store benchmark metrics for Triton FSA implementations."""
     def __init__(self):
-        self.execution_time = 0.0        # in ms
-        self.memory_transfer_time = 0.0  # in ms
-        self.memory_used = 0             # in bytes
-        self.gpu_utilization = 0.0       # in percent
-        self.memory_bandwidth = 0.0      # in MB/s
-        self.compilation_time = 0.0      # in ms
+        self.execution_time: float = 0.0        # Tempo totale in ms
+        self.memory_transfer_time: float = 0.0  # Tempo di trasferimento dati in ms
+        self.kernel_time: float = 0.0           # Tempo di esecuzione del kernel in ms
+        self.memory_used: int = 0               # Memoria usata in byte
+        self.gpu_utilization: float = 0.0       # Utilizzo GPU in percentuale
+        self.memory_bandwidth: float = 0.0      # Banda di memoria in MB/s
 
-def get_gpu_memory_usage():
-    """Get current GPU memory usage using torch."""
-    if torch.cuda.is_available():
-        return torch.cuda.memory_allocated()
-    return 0
+def get_gpu_memory_usage() -> int:
+    """Restituisce l'utilizzo corrente della memoria GPU in byte."""
+    return torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
 
-def get_gpu_utilization():
-    """Get GPU utilization using nvidia-smi via subprocess."""
+def get_gpu_utilization() -> float:
+    """Restituisce l'utilizzo della GPU in percentuale usando nvidia-smi."""
     try:
-        import subprocess
-        result = subprocess.check_output(['nvidia-smi', '--query-gpu=utilization.gpu', '--format=csv,noheader,nounits'])
+        result = subprocess.check_output(
+            ['nvidia-smi', '--query-gpu=utilization.gpu', '--format=csv,noheader,nounits']
+        )
         return float(result.decode('utf-8').strip())
-    except:
+    except Exception:
         return 0.0
 
-def fsa_triton(
-    fsa_ptr,
-    input_string_ptr,
-    output_ptr,
-    input_len,
-    fsa_num_states,
-    fsa_num_symbols,
-    fsa_start_state,
-    num_accepting_states,
-    grid_size=1
+# Kernel Triton corretto
+@triton.jit
+def fsa_kernel(
+    transitions_ptr: POINTER_INT32,
+    is_accepting_ptr: POINTER_INT1,
+    input_strings_ptr: POINTER_INT32,
+    output_ptr: POINTER_INT1,
+    input_len: INT32,
+    start_state: INT32,
+    num_states: INT32,
+    num_symbols: INT32,
+    batch_size: INT32
 ):
+    pid = tl.program_id(0)
+    if pid >= batch_size:
+        return
+    state = start_state
+    for i in range(input_len):
+        base_offset = pid * input_len
+        current_offset = base_offset + i
+        symbol = tl.load(input_strings_ptr + current_offset)
+        if symbol >= num_symbols or symbol < 0:
+            tl.store(output_ptr + pid, 0)
+            return
+        trans_offset = state * num_symbols + symbol
+        state = tl.load(transitions_ptr + trans_offset)
+        if state >= num_states:
+            tl.store(output_ptr + pid, 0)
+            return
+    is_accept = tl.load(is_accepting_ptr + state)
+    tl.store(output_ptr + pid, is_accept)
+
+
+def fsa_triton(
+    input_strings: torch.Tensor,
+    regex: str,
+    batch_size: int = 1,
+    grid_size: Optional[int] = None
+) -> tuple[BenchmarkMetrics, torch.Tensor]:
     """
-    FSA implementation using Triton with performance metrics.
-    
-    Parameters:
+    Implementazione di un FSA con Triton per processare stringhe di input.
+
+    Parametri:
     -----------
-    fsa_ptr: Pointer to FSA representation
-    input_string_ptr: Pointer to the input string
-    output_ptr: Pointer to the output (boolean indicating acceptance)
-    input_len: Length of the input string
-    fsa_num_states: Number of states in the FSA
-    fsa_num_symbols: Number of symbols in the FSA alphabet
-    fsa_start_state: Initial state of the FSA
-    num_accepting_states: Number of accepting states
-    grid_size: Size of the grid for parallel execution
-    
-    Returns:
+    input_strings : torch.Tensor
+        Tensore 2D (batch_size, input_len) con le stringhe di input come interi.
+    regex : str
+        Espressione regolare da convertire in FSA tramite il codice C++.
+    batch_size : int, opzionale
+        Numero di stringhe da processare in parallelo (default: 1).
+    grid_size : int, opzionale
+        Dimensione della griglia per l'esecuzione parallela (default: batch_size).
+
+    Restituisce:
     --------
-    BenchmarkMetrics object containing performance data
+    tuple[BenchmarkMetrics, torch.Tensor]
+        Metriche di performance e risultati dell'elaborazione.
     """
     metrics = BenchmarkMetrics()
-    
-    # Start timing execution
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA non disponibile: esecuzione su GPU richiesta.")
+
+    device = torch.device('cuda')
+
+    # --- Conversione del regex in FSA tramite C++
     start_time = time.time()
+    regex_bytes = regex.encode('utf-8')
+    fsa_data_ptr = lib.fsa_to_data(lib.regex_to_fsa(regex_bytes))
+    fsa_data = fsa_data_ptr.contents
+
+    # Estrazione dei dati dall'FSA
+    fsa_num_states = fsa_data.num_states
+    fsa_num_symbols = fsa_data.num_alphabet_symbols
+    fsa_start_state = fsa_data.start_state
     
-    # Record initial memory usage
-    initial_cpu_mem = psutil.Process().memory_info().rss
+    # Matrice di transizione
+    transition_function = np.ctypeslib.as_array(
+        fsa_data.transition_function, 
+        shape=(fsa_data.num_states, fsa_data.num_alphabet_symbols)
+    )
+    
+    # Stati accettanti
+    accepting_states = [fsa_data.accepting_states[i] for i in range(fsa_data.accepting_states_size)]
+    is_accepting = np.zeros(fsa_num_states, dtype=bool)
+    for state in accepting_states:
+        is_accepting[state] = True
+
+    # --- Preparazione dei tensori
+    input_len = input_strings.shape[1]
+    output = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+    # Misurazione iniziale della memoria GPU
     initial_gpu_mem = get_gpu_memory_usage()
-    
-    # Start timing memory transfer
+
+    # Trasferimento dei dati al GPU
     transfer_start = time.time()
-    
-    # Convert inputs to PyTorch tensors and move to GPU
-    # This simulates memory transfer but in a real implementation
-    # you'd use actual Triton memory transfers
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Simulate FSA data transfers
-    fsa_tensor = torch.zeros((fsa_num_states * fsa_num_symbols), device=device)
-    input_tensor = torch.zeros(input_len, dtype=torch.int32, device=device)
-    output_tensor = torch.zeros(1, dtype=torch.bool, device=device)
-    
-    # Finish timing memory transfer
+    fsa_transitions = torch.from_numpy(transition_function.flatten()).to(device=device, dtype=torch.int32)
+    fsa_is_accepting = torch.from_numpy(is_accepting).to(device=device, dtype=torch.bool)
+    input_strings = input_strings.to(device=device, dtype=torch.int32)
     transfer_end = time.time()
-    metrics.memory_transfer_time = (transfer_end - transfer_start) * 1000  # convert to ms
-    
-    # Measure compilation time (in a real implementation)
-    compile_start = time.time()
-    # Simulated compilation - would be actual JIT compilation in Triton
-    time.sleep(0.001)  # 1ms simulated compilation
-    compile_end = time.time()
-    metrics.compilation_time = (compile_end - compile_start) * 1000  # convert to ms
-    
-    # Start kernel execution timing
+    metrics.memory_transfer_time = (transfer_end - transfer_start) * 1000  # ms
+
+    # --- Lancio del kernel
+    grid_size = grid_size or batch_size
     kernel_start = time.time()
-    
-    # Simulate kernel execution
-    # In real implementation, this would be the actual Triton kernel
-    output_tensor[0] = True  # Always accepting for this placeholder
-    
-    # Record GPU utilization during kernel execution
-    metrics.gpu_utilization = get_gpu_utilization()
-    
-    # End kernel execution timing
+    fsa_kernel[grid_size,](
+        fsa_transitions,
+        fsa_is_accepting,
+        input_strings,
+        output,
+        input_len,
+        fsa_start_state,
+        fsa_num_states,
+        fsa_num_symbols,
+        batch_size
+    )
+    torch.cuda.synchronize()  # Attende il completamento del kernel
     kernel_end = time.time()
-    kernel_time = (kernel_end - kernel_start) * 1000  # ms
-    
-    # Copy result back to output (simulating device to host transfer)
-    output_ptr[0] = output_tensor[0].item()
-    
-    # End timing execution
+    metrics.kernel_time = (kernel_end - kernel_start) * 1000  # ms
+
+    # --- Calcolo delle metriche finali
     end_time = time.time()
     metrics.execution_time = (end_time - start_time) * 1000  # ms
-    
-    # Record final memory usage and calculate difference
-    final_cpu_mem = psutil.Process().memory_info().rss
     final_gpu_mem = get_gpu_memory_usage()
-    metrics.memory_used = (final_gpu_mem - initial_gpu_mem) + (final_cpu_mem - initial_cpu_mem)
-    
-    # Calculate memory bandwidth (bytes/second)
-    total_bytes_transferred = (fsa_num_states * fsa_num_symbols * 4) + input_len + 1
-    metrics.memory_bandwidth = (total_bytes_transferred / metrics.memory_transfer_time) * 1000 / (1024 * 1024)  # MB/s
-    
-    # Print metrics
-    print("[Triton FSA Engine] Performance metrics:")
-    print(f"  - Total Execution Time: {metrics.execution_time:.4f} ms")
-    print(f"  - Memory Transfer Time: {metrics.memory_transfer_time:.4f} ms")
-    print(f"  - Compilation Time: {metrics.compilation_time:.4f} ms")
-    print(f"  - Kernel Execution Time: {kernel_time:.4f} ms")
-    print(f"  - Memory Used: {metrics.memory_used} bytes")
-    print(f"  - GPU Utilization: {metrics.gpu_utilization:.2f}%")
-    print(f"  - Memory Bandwidth: {metrics.memory_bandwidth:.2f} MB/s")
-    
-    return metrics
+    metrics.memory_used = final_gpu_mem - initial_gpu_mem
+    metrics.gpu_utilization = get_gpu_utilization()
+
+    total_bytes = (
+        fsa_transitions.numel() * fsa_transitions.element_size() +
+        fsa_is_accepting.numel() * fsa_is_accepting.element_size() +
+        input_strings.numel() * input_strings.element_size() +
+        output.numel() * output.element_size()
+    )
+    metrics.memory_bandwidth = (total_bytes / (metrics.memory_transfer_time / 1000)) / (1024 * 1024)  # MB/s
+
+    # --- Pulizia
+    lib.free_fsa_data(fsa_data_ptr)
+
+    return metrics, output
+
+# Esempio di utilizzo
+if __name__ == "__main__":
+    input_strings = torch.tensor([[0, 1, 0], [1, 0, 1]], dtype=torch.int32).cuda()
+    regex = "(0|1)*"
+    metrics, results = fsa_triton(input_strings, regex, batch_size=2)
+    print(f"Risultati dell'accettazione: {results.cpu().numpy()}")
+    print(f"[Triton FSA Engine] Metriche di performance:")
+    print(f"  - Tempo totale: {metrics.execution_time:.4f} ms")
+    print(f"  - Tempo trasferimento: {metrics.memory_transfer_time:.4f} ms")
+    print(f"  - Tempo kernel: {metrics.kernel_time:.4f} ms")
+    print(f"  - Memoria utilizzata: {metrics.memory_used} byte")
+    print(f"  - Utilizzo GPU: {metrics.gpu_utilization:.2f}%")
+    print(f"  - Banda di memoria: {metrics.memory_bandwidth:.2f} MB/s")

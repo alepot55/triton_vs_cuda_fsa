@@ -5,8 +5,6 @@
 
 #include <vector>
 #include <string>
-
-// Definizione MOLTO semplificata di un FSA per iniziare
 struct FSA {
     int num_states;
     int num_alphabet_symbols;

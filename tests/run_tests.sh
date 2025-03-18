@@ -10,6 +10,7 @@ CLEAN_BUILD=true
 FORCE_CLEAN=true
 TEST_REGEX=true  # Default: test regex
 TEST_CUDA=false  # Default: don't test CUDA unless explicitly requested
+TEST_TRITON=false # Default: don't test Triton unless explicitly requested
 VERBOSE=false    # Default: quiet mode
 LOG_FILE="/tmp/fsa_test_build.log"
 
@@ -18,13 +19,18 @@ for arg in "$@"; do
         --regex-only)
             TEST_REGEX=true
             TEST_CUDA=false
+            TEST_TRITON=false
             ;;
         --cuda)
             TEST_CUDA=true
             ;;
+        --triton)
+            TEST_TRITON=true
+            ;;
         --all)
             TEST_REGEX=true
             TEST_CUDA=true
+            TEST_TRITON=true
             ;;
         --verbose)
             VERBOSE=true
@@ -34,7 +40,8 @@ for arg in "$@"; do
             echo "Options:"
             echo "  --regex-only  Only run regex tests"
             echo "  --cuda        Run CUDA tests"
-            echo "  --all         Run all tests (default)"
+            echo "  --triton      Run Triton tests"
+            echo "  --all         Run all tests (regex, CUDA, Triton)"
             echo "  --verbose     Show all build output"
             echo "  --help        Display this help message"
             exit 0
@@ -137,6 +144,43 @@ if [ "$TEST_CUDA" = true ]; then
         fi
     else
         print_status "CUDA tests not available or could not be built" "error"
+    fi
+fi
+
+# Run Triton tests if enabled
+if [ "$TEST_TRITON" = true ]; then
+    print_header "Running Triton Tests"
+    TRITON_TEST_RUNNER="$PROJECT_DIR/tests/triton/triton_test_runner.py"
+    TEST_FILE="$PROJECT_DIR/common/data/tests/extended_tests.txt"
+    
+    if [ -f "$TRITON_TEST_RUNNER" ]; then
+        # Set up Python environment from the project
+        if [ -f "$PROJECT_DIR/environment.yml" ]; then
+            # Activate conda environment if available
+            if command -v conda &> /dev/null; then
+                ENV_NAME=$(grep "name:" "$PROJECT_DIR/environment.yml" | cut -d' ' -f2)
+                if [ -n "$ENV_NAME" ]; then
+                    source "$(conda info --base)/etc/profile.d/conda.sh"
+                    conda activate "$ENV_NAME" 2>/dev/null
+                fi
+            fi
+        fi
+        
+        # Run Triton tests using the test runner
+        test_output=$(python "$TRITON_TEST_RUNNER" "$TEST_FILE" $($VERBOSE && echo "--verbose"))
+        echo "$test_output"
+        
+        # Check if tests were successful by looking for the pass rate
+        passed=$(echo "$test_output" | grep -Eo "Passed: [0-9]+/[0-9]+" | awk '{split($2,a,"/"); print a[1]}')
+        total=$(echo "$test_output" | grep -Eo "Passed: [0-9]+/[0-9]+" | awk '{split($2,a,"/"); print a[2]}')
+        
+        if [ -n "$passed" ] && [ -n "$total" ] && [ "$passed" -eq "$total" ]; then
+            print_status "Triton tests passed" "success"
+        else
+            print_status "Triton tests failed" "error"
+        fi
+    else
+        print_status "Triton test runner not found: $TRITON_TEST_RUNNER" "error"
     fi
 fi
 
