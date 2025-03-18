@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstring>
 #include <unordered_map>
+#include <cuda_runtime.h>
+#include <iostream>
 
 // **Funzione Helper per Appiattire la Matrice di Transizione**
 static std::vector<int> flattenTransitionMatrix(const FSA& fsa) {
@@ -16,6 +18,15 @@ static std::vector<int> flattenTransitionMatrix(const FSA& fsa) {
         }
     }
     return flat;
+}
+
+// Macro per controllo errori CUDA
+#define CUDA_CHECK(call) { \
+    cudaError_t err = (call); \
+    if(err != cudaSuccess) { \
+        std::cerr << "CUDA error in " << __FILE__ << " at line " << __LINE__ << ": " \
+                  << cudaGetErrorString(err) << std::endl; \
+    } \
 }
 
 // **Namespace CUDAFSAEngine**
@@ -67,8 +78,8 @@ namespace CUDAFSAEngine {
         // Prepara il DFA per la GPU
         GPUDFA gpu_dfa = prepareGPUDFA(fsa);
         GPUDFA* d_dfa;
-        cudaMalloc(&d_dfa, sizeof(GPUDFA));
-        cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaMalloc(&d_dfa, sizeof(GPUDFA)));
+        CUDA_CHECK(cudaMemcpy(d_dfa, &gpu_dfa, sizeof(GPUDFA), cudaMemcpyHostToDevice));
 
         // Prepara i dati di input
         std::vector<char> input_strings;
@@ -88,26 +99,27 @@ namespace CUDAFSAEngine {
         int* d_string_lengths;
         int* d_string_offsets;
         char* d_results;
-        cudaMalloc(&d_input_strings, input_strings.size() * sizeof(char));
-        cudaMalloc(&d_string_lengths, string_lengths.size() * sizeof(int));
-        cudaMalloc(&d_string_offsets, string_offsets.size() * sizeof(int));
-        cudaMalloc(&d_results, inputs.size() * sizeof(char));
+        CUDA_CHECK(cudaMalloc(&d_input_strings, input_strings.size() * sizeof(char)));
+        CUDA_CHECK(cudaMalloc(&d_string_lengths, string_lengths.size() * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&d_string_offsets, string_offsets.size() * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&d_results, inputs.size() * sizeof(char)));
 
         // Copia i dati sul device
-        cudaMemcpy(d_input_strings, input_strings.data(), input_strings.size() * sizeof(char), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_string_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_string_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaMemcpy(d_input_strings, input_strings.data(), input_strings.size() * sizeof(char), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_string_lengths, string_lengths.data(), string_lengths.size() * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_string_offsets, string_offsets.data(), string_offsets.size() * sizeof(int), cudaMemcpyHostToDevice));
 
         // Configura e lancia il kernel
         int num_strings = inputs.size();
         int block_size = 256;
         int grid_size = (num_strings + block_size - 1) / block_size;
         fsa_kernel_batch<<<grid_size, block_size>>>(d_dfa, d_input_strings, d_string_lengths, d_string_offsets, num_strings, d_results);
-        cudaDeviceSynchronize();
+        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaGetLastError());
 
         // Copia i risultati sul host
         std::vector<char> results(num_strings);
-        cudaMemcpy(results.data(), d_results, num_strings * sizeof(char), cudaMemcpyDeviceToHost);
+        CUDA_CHECK(cudaMemcpy(results.data(), d_results, num_strings * sizeof(char), cudaMemcpyDeviceToHost));
 
         // Converte i risultati in bool
         std::vector<bool> bool_results(num_strings);
@@ -116,40 +128,31 @@ namespace CUDAFSAEngine {
         }
 
         // Libera la memoria
-        cudaFree(d_dfa);
-        cudaFree(d_input_strings);
-        cudaFree(d_string_lengths);
-        cudaFree(d_string_offsets);
-        cudaFree(d_results);
+        CUDA_CHECK(cudaFree(d_dfa));
+        CUDA_CHECK(cudaFree(d_input_strings));
+        CUDA_CHECK(cudaFree(d_string_lengths));
+        CUDA_CHECK(cudaFree(d_string_offsets));
+        CUDA_CHECK(cudaFree(d_results));
 
         return bool_results;
     }
 
-    // **Esecuzione Singola sulla GPU (non implementata completamente)**
-    bool* runOnGPU(const CUDAFSA& cudafsa, const std::vector<std::string>& inputs, bool* accepts) {
-        // TODO: Implementare se necessario
-        return accepts;
-    }
-
-    // **Liberazione della Memoria**
-    void freeCUDAFSA(CUDAFSA& cudafsa) {
-        // Nessuna memoria dinamica da liberare
+    // **Esecuzione Singola sulla GPU**
+    bool runDFA(const FSA& fsa, const std::string& input) {
+        std::vector<std::string> inputs = {input};  // Crea un batch con una sola stringa
+        std::vector<bool> results = runBatchOnGPU(fsa, inputs);
+        return results[0];  // Restituisce il risultato della singola stringa
     }
 
     // **Conversione da Regex a DFA**
     FSA regexToDFA(const std::string& regex) {
-        return FSAEngine::regexToDFA(regex);
-    }
-
-    // **Esecuzione del DFA**
-    bool runDFA(const FSA& fsa, const std::string& input) {
-        return FSAEngine::runDFA(fsa, input);
+        return FSAEngine::regexToDFA(regex);  // Eseguito sulla CPU
     }
 
     // **Test Singolo**
     bool runSingleTest(const std::string& regex, const std::string& input) {
-        FSA fsa = regexToDFA(regex);
-        return runDFA(fsa, input);
+        FSA fsa = regexToDFA(regex);  // Conversione sulla CPU
+        return runDFA(fsa, input);    // Esecuzione sulla GPU
     }
 }
 
