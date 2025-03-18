@@ -307,3 +307,28 @@ regex = (0|10)*1?
 input = 0110
 expected = false
 
+# ===== NEW: Extra Tests =====
+
+[Extra_RepeatedPattern]
+regex = (01){3}
+input = 010101
+expected = true
+
+[Extra_MismatchTest]
+regex = (0|1)+
+input = 
+expected = false
+
+# ===== NEW: Complex and Edge Cases II =====
+
+[Complex_LongPattern]
+regex = (01){10}
+input = 01010101010101010101
+expected = true
+
+[Complex_MixedGroups2]
+regex = ((0|1)+)?(1{2,3}(0*))
+input = 11000
+expected = true
+
+
