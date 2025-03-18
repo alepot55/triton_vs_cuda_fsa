@@ -1,5 +1,4 @@
-#include "../common/include/fsa_engine.h"
-#include "../common/include/regex_conversion.h"
+#include "../../common/include/fsa_engine.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -79,8 +78,9 @@ std::vector<TestCase> parseTestFile(const std::string& filename) {
     return tests;
 }
 
+// Main function for regex conversion test
 int main(int argc, char** argv) {
-    std::string testFile = "../common/data/tests/extended_tests.txt";
+    std::string testFile = "../../common/data/tests/extended_tests.txt";
     if (argc > 1) {
         testFile = argv[1];
     }

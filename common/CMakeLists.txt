@@ -5,14 +5,16 @@ project(FSACommon)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Source files for the common library
+# Source files for the common library - removed non-existent file
 set(SOURCES
     src/regex_conversion.cpp
+    # src/fsa_engine.cpp was removed as it doesn't exist
 )
 
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
 )
 
 # Create static library

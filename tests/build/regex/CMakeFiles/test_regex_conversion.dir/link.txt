@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/test_regex_conversion.dir/test_regex_conversion.cpp.o -o test_regex_conversion  /home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/../common/build/libcommon.a 
