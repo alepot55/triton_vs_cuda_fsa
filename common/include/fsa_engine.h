@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+// Forward declarations for GPU-specific types
+struct CUDAFSA;
+struct GPUDFA;
+
 class FSAEngine {
 public:
     static FSA regexToDFA(const std::string& regex);

@@ -100,7 +100,8 @@ struct NFA {
 
 // Utility functions for regex parsing
 bool isOperator(char c) {
-    return (c == '|' || c == '.' || c == '*' || c == '(' || c == ')' || c == '?' || c == '+'); // Added '+' as operator
+    // Aggiunti '{' e '}' come operatori
+    return (c == '|' || c == '.' || c == '*' || c == '(' || c == ')' || c == '?' || c == '+' || c == '{' || c == '}');
 }
 
 int getPrecedence(char op) {
@@ -295,53 +296,15 @@ std::string preprocessRegex(const std::string regex) {
             i++;
         }
         // Handle repetition {n} - leave for expandRepetition function
-        else if (i > 0 && regex[i] == '{') {
+        else if (regex[i] == '{') {
             size_t close = regex.find('}', i);
             if (close != std::string::npos) {
-                std::string countStr = regex.substr(i+1, close-i-1);
-                int count = std::stoi(countStr);
-                addDebug("Found repetition {" + countStr + "}");
-
-                // If the preceding character is ')', find the matching '('
-                if (i > 0 && regex[i-1] == ')') {
-                    int balance = 1;
-                    size_t j = i - 2;
-                    while (j < regex.size() && balance > 0) {
-                        if (regex[j] == ')')
-                            balance++;
-                        else if (regex[j] == '(')
-                            balance--;
-                        if (balance == 0)
-                            break;
-                        if (j == 0)
-                            break;
-                        j--;
-                    }
-
-                    if (balance == 0) {
-                        std::string group = regex.substr(j, i - j);
-                        // Repeat the group 'count' times
-                        std::string repeated;
-                        for (int k = 0; k < count; k++) {
-                            repeated += group;
-                        }
-                        // Replace the group{count} with the repeated group
-                        out = out.substr(0, out.size() - group.size()) + repeated;
-                        addDebug("Expanded " + group + "{" + countStr + "} to " + repeated);
-                    }
-                } else {
-                    // Single character repetition
-                    char prev = out.back();
-                    out.pop_back();
-                    for (int k = 0; k < count; k++) {
-                        out += prev;
-                    }
-                    addDebug("Expanded " + std::string(1, prev) + "{" + countStr + "} to " + std::string(count, prev));
-                }
+                out += regex.substr(i, close - i + 1);
+                addDebug("Preserved repetition token: " + regex.substr(i, close - i + 1));
                 i = close + 1;
             } else {
-                addDebug("Malformed repetition at position " + std::to_string(i));
-                out.push_back(regex[i++]);
+                addDebug("Mismatched curly braces at position " + std::to_string(i));
+                throw std::runtime_error("Mismatched curly braces in regex");
             }
         }
         else {
@@ -352,7 +315,6 @@ std::string preprocessRegex(const std::string regex) {
     addDebug("After preprocessing: " + out);
     return out;
 }
-
 
 // Thompson's Construction Algorithm for regex to NFA
 NFA createBasicNFA(char symbol) {
@@ -421,62 +383,52 @@ NFA alternateNFAs(const NFA& first, const NFA& second) {
 }
 
 NFA applyKleeneStar(const NFA& nfa) {
-    NFA result;
-
-    // Create special structure to handle repetitions correctly
-    int start = result.addState(true); // Make start state accepting for *
-    result.start_state = start;
-
-    // Add original NFA states
-    int nfaOffset = 1; //2;
-    result.copyStatesFrom(nfa, nfaOffset);
-
-    // Add epsilon from start to accept (match empty string)
-    //result.addEpsilonTransition(start, accept);
-
-    // Add epsilon from start to NFA start (enter the repetition)
-    result.addEpsilonTransition(start, nfa.start_state + nfaOffset);
-
-    // For each accepting state in original NFA
-    for (int acceptingState : nfa.accepting_states) {
-        // Connect to final accept state
-        //result.addEpsilonTransition(acceptingState + nfaOffset, accept);
-
-        // Connect back to start of pattern for repetition
-        result.addEpsilonTransition(acceptingState + nfaOffset, nfa.start_state + nfaOffset);
-        result.states[acceptingState + nfaOffset].is_accepting = true;
-    }
-    if(nfa.accepting_states.size() == 0){
-        result.states[nfa.start_state + nfaOffset].is_accepting = true;
-    }
-
-
-    return result;
+	// New Thompson construction for Kleene star:
+	NFA result;
+	// Create new start (non accepting) and new accept (accepting)
+	int newStart = result.addState(false);
+	int newAccept = result.addState(true);
+	result.start_state = newStart;
+	// Copy original NFA states; new ones will come after current states.
+	int nfaOffset = result.states.size();
+	result.copyStatesFrom(nfa, nfaOffset);
+	// New start epsilon-transitions: to the original start and directly to new accept (empty string)
+	result.addEpsilonTransition(newStart, nfa.start_state + nfaOffset);
+	result.addEpsilonTransition(newStart, newAccept);
+	// For each accepting state in original NFA,
+	// add epsilon-transitions back to the original start and to new accept.
+	for (int a : nfa.accepting_states) {
+		result.addEpsilonTransition(a + nfaOffset, nfa.start_state + nfaOffset);
+		result.addEpsilonTransition(a + nfaOffset, newAccept);
+		// Clear the accepting flag on the copied state.
+		result.states[a + nfaOffset].is_accepting = false;
+	}
+	return result;
 }
 
-// Add support for the '+' operator (one or more occurrences)
+NFA applyOptional(const NFA& nfa) {
+	// New Thompson construction for optional operator:
+	NFA result;
+	// New start (non accepting) and new accept (accepting)
+	int newStart = result.addState(false);
+	int newAccept = result.addState(true);
+	result.start_state = newStart;
+	int nfaOffset = result.states.size();
+	result.copyStatesFrom(nfa, nfaOffset);
+	// Option: either skip operand or run operand.
+	result.addEpsilonTransition(newStart, nfa.start_state + nfaOffset);
+	result.addEpsilonTransition(newStart, newAccept);
+	// For each accepting state in the operand, add an epsilon to new accept
+	for (int a : nfa.accepting_states) {
+		result.addEpsilonTransition(a + nfaOffset, newAccept);
+		result.states[a + nfaOffset].is_accepting = false;
+	}
+	return result;
+}
+
 NFA applyPlusOperator(const NFA& nfa) {
     // Implemented using Kleene star and concatenation: N+ == NN*
     return concatenateNFAs(nfa, applyKleeneStar(nfa));
-}
-
-
-// Add support for the optional operator (zero or one occurrence)
-NFA applyOptional(const NFA& nfa) {
-    NFA result;
-    int start = result.addState();
-    int accept = result.addState(true);
-    result.start_state = start;
-    int nfaOffset = 2;
-    result.copyStatesFrom(nfa, nfaOffset);
-    // Optional: allow skipping the operand
-    result.addEpsilonTransition(start, accept);
-    // Also allow entering the operand and finishing after it
-    result.addEpsilonTransition(start, nfa.start_state + nfaOffset);
-    for (int s : nfa.accepting_states) {
-        result.addEpsilonTransition(s + nfaOffset, accept);
-    }
-    return result;
 }
 
 NFA createLiteralNFA(const std::string& literal) {
@@ -524,6 +476,21 @@ bool hasRegexConcatenationIssue(const std::string& regex) {
     return false;
 }
 
+// Nuova funzione per applicare la ripetizione: costruisce NFA ripetuto n volte
+NFA applyRepetition(const NFA& nfa, int n) {
+    if (n <= 0) {
+        NFA result;
+        int start = result.addState(true);
+        result.start_state = start;
+        return result;
+    }
+    NFA result = nfa;
+    for (int i = 1; i < n; ++i) {
+        result = concatenateNFAs(result, nfa);
+    }
+    return result;
+}
+
 // Make debug messages in regexToNFA cleaner and more focused
 NFA regexToNFA(const std::string& regex) {
     clearDebugOutput();
@@ -531,7 +498,7 @@ NFA regexToNFA(const std::string& regex) {
     std::string preprocessed = preprocessRegex(regex);
     conversionDebugLog += "DEBUG: Preprocessed regex: " + preprocessed + "\n";
     
-    std::string expanded = preprocessed;
+    std::string expanded = preprocessed;  // now contiene eventuali token {n} invariati
     conversionDebugLog += "DEBUG: Expanded regex: " + expanded + "\n";
     addDebug("Expanded regex: " + expanded);
 
@@ -622,7 +589,8 @@ NFA regexToNFA(const std::string& regex) {
         std::stack<NFA> nfaStack;
         int tokenIndex = 0;
         
-        for (char token : postfix) {
+        for (size_t i = 0; i < postfix.size(); i++) {
+            char token = postfix[i];
             tokenIndex++;
             // Log the stack size before each operation
             conversionDebugLog += "DEBUG: Processing token '" + std::string(1, token) + 
@@ -630,7 +598,23 @@ NFA regexToNFA(const std::string& regex) {
                                  std::to_string(postfix.length()) + ") - Stack size: " + 
                                  std::to_string(nfaStack.size()) + "\n";
             
-            if (isOperator(token)) {
+            // Se il token inizia una ripetizione, leggiamo fino a '}'
+            if (token == '{') {
+                size_t close = postfix.find('}', i);
+                if (close == std::string::npos) {
+                    throw std::runtime_error("Mismatched braces in postfix expression");
+                }
+                int count = std::stoi(postfix.substr(i+1, close - i - 1));
+                if (nfaStack.empty()) {
+                    throw std::runtime_error("Invalid regex syntax: no operand for repetition operator at position " + std::to_string(i));
+                }
+                NFA operand = nfaStack.top();
+                nfaStack.pop();
+                nfaStack.push(applyRepetition(operand, count));
+                addDebug("Applied repetition: {" + std::to_string(count) + "}");
+                i = close; // salta il token di ripetizione
+            }
+            else if (isOperator(token)) {
                 if (token == '*') {
                     if (nfaStack.empty()) {
                         std::string errMsg = "Invalid regex syntax: not enough operands for Kleene star in regex: " + regex;
