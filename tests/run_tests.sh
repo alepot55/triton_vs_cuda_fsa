@@ -58,39 +58,18 @@ print_status() {
 
 # Force clean if requested (silently)
 if [ "$FORCE_CLEAN" = true ]; then
-    rm -rf "$PROJECT_DIR/common/build" "$PROJECT_DIR/cuda/build" "$SCRIPT_DIR/build"
+    rm -rf "$SCRIPT_DIR/build"
 fi
 
 # Function to run commands with or without verbose output
 run_cmd() {
     if [ "$VERBOSE" = true ]; then
-         "$@"
+        "$@"
     else
-         "$@" >> "$LOG_FILE" 2>&1
+        "$@" >> "$LOG_FILE" 2>&1
     fi
     return $?
 }
-
-# Build the common library first
-print_header "Building common library"
-mkdir -p "$PROJECT_DIR/common/build"
-cd "$PROJECT_DIR/common/build"
-
-# Remove CMakeCache.txt if it exists to avoid path issues
-rm -f CMakeCache.txt
-
-run_cmd cmake "$PROJECT_DIR/common" -DCMAKE_BUILD_TYPE=Release -Wno-dev
-if [ $? -ne 0 ]; then
-    print_status "CMake configuration failed" "error"
-    exit 1
-fi
-
-run_cmd make -j4
-if [ $? -ne 0 ]; then
-    print_status "Failed to build common library" "error"
-    exit 1
-fi
-print_status "Common library built successfully" "success"
 
 # Only build CUDA implementation if requested
 if [ "$TEST_CUDA" = true ]; then
@@ -164,10 +143,6 @@ fi
 # Clean up silently
 if [ "$CLEAN_BUILD" = true ]; then
     rm -rf "$SCRIPT_DIR/build"
-    if [ "$FORCE_CLEAN" = true ]; then
-        rm -rf "$PROJECT_DIR/common/build"
-        rm -rf "$PROJECT_DIR/cuda/build"
-    fi
 fi
 
 print_header "Tests completed"

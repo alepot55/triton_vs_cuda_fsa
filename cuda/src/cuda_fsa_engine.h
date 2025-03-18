@@ -29,6 +29,7 @@ struct GPUDFA {
     int start_state;
     int transition_table[MAX_STATES * MAX_SYMBOLS];
     bool accepting_states[MAX_STATES];
+    char alphabet[MAX_SYMBOLS];  // Add alphabet array to match usage in kernel
 };
 
 // Namespace per le funzioni specifiche di CUDA
