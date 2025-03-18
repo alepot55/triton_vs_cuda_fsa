@@ -1,7 +1,0 @@
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/CMakeFiles/edit_cache.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/CMakeFiles/rebuild_cache.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/cuda/CMakeFiles/edit_cache.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/cuda/CMakeFiles/rebuild_cache.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/regex/CMakeFiles/test_regex_conversion.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/regex/CMakeFiles/edit_cache.dir
-/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/build/regex/CMakeFiles/rebuild_cache.dir

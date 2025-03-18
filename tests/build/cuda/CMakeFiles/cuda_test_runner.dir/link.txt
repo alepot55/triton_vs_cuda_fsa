@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/cuda_test_runner.dir/cuda_test_runner.cpp.o -o cuda_test_runner  /home/alepot55/Desktop/projects/triton_vs_cuda_fsa/tests/../common/build/libcommon.a 

@@ -92,7 +92,7 @@ def run_triton_benchmark(input_string, batch_size=1, regex="(0|1)*1", num_runs=3
     for run in range(num_runs):
         print(f"  Run {run+1}/{num_runs}")
         cmd = [
-            "python", "/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/triton/benchmarks/benchmark_fsa.py",
+            "python", "./triton/benchmarks/benchmark_fsa.py",
             f"--regex={regex}",
             f"--input={input_string}",
             f"--batch-size={batch_size}"
@@ -290,7 +290,7 @@ def main():
             
             # Also run Triton for comparison
             triton_cmd = [
-                "python", "/home/alepot55/Desktop/projects/triton_vs_cuda_fsa/triton/benchmarks/benchmark_fsa.py",
+                "python", "./triton/benchmarks/benchmark_fsa.py",
                 f"--regex={args.regex_patterns[0]}",
                 f"--input={args.test_strings[0]}",
                 f"--batch-size={args.batch_sizes[0]}"

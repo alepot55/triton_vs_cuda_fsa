@@ -8,8 +8,6 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
-#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
 #include <string>
 #include <numeric>  // Added for std::accumulate
 #include <cctype>  // for isalnum, isdigit
