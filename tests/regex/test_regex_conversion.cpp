@@ -85,7 +85,6 @@ int main(int argc, char** argv) {
         testFile = argv[1];
     }
     
-    std::cout << "Testing regex conversion with file: " << testFile << std::endl;
     std::vector<TestCase> tests = parseTestFile(testFile);
     
     if (tests.empty()) {
@@ -93,7 +92,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    std::cout << "Found " << tests.size() << " test cases" << std::endl;
     
     // Initialize FSA engine
     FSAEngine engine;
@@ -113,18 +111,15 @@ int main(int argc, char** argv) {
             
             if (result == test.expected) {
                 passed++;
-                std::cout << "✓ " << test.name << std::endl;
             } else {
                 failed++;
                 std::string errorMsg = "✗ " + test.name + " - Expected: " + 
                                        (test.expected ? "true" : "false") + 
                                        ", Got: " + (result ? "true" : "false");
                 failedTests.push_back(errorMsg);
-                std::cout << errorMsg << std::endl;
                 
                 // Print additional debug info for failed tests
                 std::string debugLog = getConversionDebugLog();
-                std::cout << "  Regex: '" << test.regex << "', Input: '" << test.input << "'" << std::endl;
                 
                 // Extract relevant parts of debug log if available
                 if (!debugLog.empty()) {
@@ -133,7 +128,6 @@ int main(int argc, char** argv) {
                     while (std::getline(iss, line)) {
                         if (line.find("ERROR:") != std::string::npos ||
                             line.find("DEBUG: Postfix expression:") != std::string::npos) {
-                            std::cout << "  " << line << std::endl;
                         }
                     }
                 }
@@ -142,28 +136,19 @@ int main(int argc, char** argv) {
             failed++;
             std::string errorMsg = "✗ " + test.name + " - Exception: " + e.what();
             failedTests.push_back(errorMsg);
-            std::cout << errorMsg << std::endl;
         }
     }
     
+    // New block to output failed test details if any
+    if (!failedTests.empty()) {
+        std::cerr << "Failed tests details:" << std::endl;
+        for (const auto& msg : failedTests) {
+            std::cerr << msg << std::endl;
+        }
+    }
+
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-    
-    // Print summary
-    std::cout << "\n===== Test Results =====\n";
-    std::cout << "Total tests: " << tests.size() << std::endl;
-    std::cout << "Passed: " << passed << " (" 
-              << std::fixed << std::setprecision(1) 
-              << (100.0 * passed / tests.size()) << "%)" << std::endl;
-    std::cout << "Failed: " << failed << std::endl;
-    std::cout << "Time: " << duration.count() << "ms" << std::endl;
-    
-    if (!failedTests.empty()) {
-        std::cout << "\nFailed Tests:\n";
-        for (const auto& err : failedTests) {
-            std::cout << err << std::endl;
-        }
-    }
-    
+            
     return failed > 0 ? 1 : 0;
 }

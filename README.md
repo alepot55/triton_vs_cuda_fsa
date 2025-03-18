@@ -22,7 +22,7 @@ Il progetto adotta un approccio di valutazione comparativa, che include:
 triton_vs_cuda_fsa/
 ├── cuda/                     # Implementazione CUDA del motore FSA
 │   ├── src/                  # Codice sorgente CUDA C++ (.cu, .h)
-│   │   ├── fsa_engine.cu   # Kernel CUDA per motore FSA
+│   │   ├── cuda_fsa_engine.cu   # Kernel CUDA per motore FSA
 │   │   ├── fsa_engine.h    # Header file (se necessario)
 │   │   └── utils.cu        # Utility functions (es: gestione memoria, benchmark)
 │   ├── include/              # Header files (se presenti)

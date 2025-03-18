@@ -10,11 +10,17 @@ endif()
 if(CUDA_LIB STREQUAL "")
     message(WARNING "Skipping CUDA tests since CUDA library is not available.")
 else()
+    # Add the CUDA test executable
     add_executable(cuda_test_runner cuda_test_runner.cpp)
+
+    # Link against both CUDA and common libraries
     target_link_libraries(cuda_test_runner PRIVATE 
-        ${COMMON_LIB} 
         ${CUDA_LIB}
+        ${COMMON_LIB}
+        ${CUDA_LIBRARIES}
         Threads::Threads
     )
+
+    # Add test
     add_test(NAME cuda_tests COMMAND cuda_test_runner)
 endif()

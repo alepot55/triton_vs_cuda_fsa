@@ -6,22 +6,15 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Process script arguments
-CLEAN_BUILD=false
-FORCE_CLEAN=false
+CLEAN_BUILD=true
+FORCE_CLEAN=true
 TEST_REGEX=true  # Default: test regex
 TEST_CUDA=false  # Default: don't test CUDA unless explicitly requested
-VERBOSE=false    # By default, use quiet mode
+VERBOSE=false    # Default: quiet mode
 LOG_FILE="/tmp/fsa_test_build.log"
 
 for arg in "$@"; do
     case $arg in
-        --clean)
-            CLEAN_BUILD=true
-            ;;
-        --force-clean)
-            FORCE_CLEAN=true
-            CLEAN_BUILD=true
-            ;;
         --regex-only)
             TEST_REGEX=true
             TEST_CUDA=false
@@ -39,12 +32,10 @@ for arg in "$@"; do
         --help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  --clean       Clean build directories after tests"
-            echo "  --force-clean Force clean all build directories before building"
-            echo "  --regex-only  Test only regex functionality (default)"
-            echo "  --cuda        Test CUDA functionality (requires CUDA toolkit)"
-            echo "  --all         Test all components"
-            echo "  --verbose     Show all build output (default: quiet)"
+            echo "  --regex-only  Only run regex tests"
+            echo "  --cuda        Run CUDA tests"
+            echo "  --all         Run all tests (default)"
+            echo "  --verbose     Show all build output"
             echo "  --help        Display this help message"
             exit 0
             ;;
@@ -65,24 +56,17 @@ print_status() {
     fi
 }
 
-# Force clean if requested
+# Force clean if requested (silently)
 if [ "$FORCE_CLEAN" = true ]; then
-    print_header "Cleaning build directories"
-    rm -rf "$PROJECT_DIR/common/build"
-    rm -rf "$PROJECT_DIR/cuda/build"
-    rm -rf "$SCRIPT_DIR/build"
-    print_status "Cleaned all build directories" "success"
+    rm -rf "$PROJECT_DIR/common/build" "$PROJECT_DIR/cuda/build" "$SCRIPT_DIR/build"
 fi
-
-# Clear log file
-> "$LOG_FILE"
 
 # Function to run commands with or without verbose output
 run_cmd() {
     if [ "$VERBOSE" = true ]; then
-        "$@"
+         "$@"
     else
-        "$@" >> "$LOG_FILE" 2>&1
+         "$@" >> "$LOG_FILE" 2>&1
     fi
     return $?
 }
@@ -98,14 +82,12 @@ rm -f CMakeCache.txt
 run_cmd cmake "$PROJECT_DIR/common" -DCMAKE_BUILD_TYPE=Release -Wno-dev
 if [ $? -ne 0 ]; then
     print_status "CMake configuration failed" "error"
-    echo "See log file for details: $LOG_FILE"
     exit 1
 fi
 
 run_cmd make -j4
 if [ $? -ne 0 ]; then
     print_status "Failed to build common library" "error"
-    echo "See log file for details: $LOG_FILE"
     exit 1
 fi
 print_status "Common library built successfully" "success"
@@ -113,25 +95,9 @@ print_status "Common library built successfully" "success"
 # Only build CUDA implementation if requested
 if [ "$TEST_CUDA" = true ]; then
     print_header "Building CUDA implementation"
-    cd "$PROJECT_DIR/cuda"
-
-    # Check if nvcc is available
-    if command -v nvcc &> /dev/null; then
-        # Clean before building to avoid path issues
-        run_cmd make clean
-        run_cmd make -j4
-
-        if [ $? -ne 0 ]; then
-            print_status "Failed to build CUDA implementation" "error"
-            echo "See log file for details: $LOG_FILE"
-            TEST_CUDA=false
-        else
-            print_status "CUDA implementation built successfully" "success"
-        fi
-    else
-        print_status "CUDA compiler (nvcc) not found" "error"
-        TEST_CUDA=false
-    fi
+    
+    # We now skip the separate CUDA build since it's integrated into the tests CMake
+    print_status "CUDA implementation will be built with tests" "success"
 fi
 
 # Create and navigate to tests build directory
@@ -152,14 +118,12 @@ fi
 
 if [ $? -ne 0 ]; then
     print_status "CMake configuration failed" "error"
-    echo "See log file for details: $LOG_FILE"
     exit 1
 fi
 
 run_cmd make -j4
 if [ $? -ne 0 ]; then
     print_status "Build failed" "error"
-    echo "See log file for details: $LOG_FILE"
     exit 1
 fi
 print_status "Tests built successfully" "success"
@@ -183,30 +147,27 @@ fi
 if [ "$TEST_CUDA" = true ]; then
     if [ -f "./cuda/cuda_test_runner" ]; then
         print_header "Running CUDA Tests"
-        ./cuda/cuda_test_runner
-        if [ $? -ne 0 ]; then
-            print_status "CUDA tests failed" "error"
-        else
+        test_output=$(./cuda/cuda_test_runner "$PROJECT_DIR/common/data/tests/extended_tests.txt")
+        echo "$test_output"
+        passed=$(echo "$test_output" | grep -Eo "Passed: [0-9]+/[0-9]+" | awk '{split($2,a,"/"); print a[1]}')
+        total=$(echo "$test_output" | grep -Eo "Passed: [0-9]+/[0-9]+" | awk '{split($2,a,"/"); print a[2]}')
+        if [ -n "$passed" ] && [ "$passed" -eq "$total" ]; then
             print_status "CUDA tests passed" "success"
+        else
+            print_status "CUDA tests failed" "error"
         fi
     else
         print_status "CUDA tests not available or could not be built" "error"
     fi
 fi
 
-# Optionally clean up
+# Clean up silently
 if [ "$CLEAN_BUILD" = true ]; then
-    print_header "Cleaning up"
-    cd "$SCRIPT_DIR"
-    rm -rf build
-    print_status "Tests build directory cleaned" "success"
-    
+    rm -rf "$SCRIPT_DIR/build"
     if [ "$FORCE_CLEAN" = true ]; then
         rm -rf "$PROJECT_DIR/common/build"
         rm -rf "$PROJECT_DIR/cuda/build"
-        print_status "All build directories cleaned" "success"
     fi
 fi
 
 print_header "Tests completed"
-echo "Log file: $LOG_FILE"

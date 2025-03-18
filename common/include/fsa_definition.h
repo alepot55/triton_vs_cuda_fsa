@@ -1,3 +1,5 @@
+// Questo header definisce la struttura dati per il Finite State Automaton (FSA),
+// utilizzato sia nelle implementazioni CPU che CUDA.
 #ifndef FSA_DEFINITION_H
 #define FSA_DEFINITION_H
 
