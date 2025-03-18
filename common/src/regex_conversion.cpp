@@ -780,29 +780,20 @@ FSA NFAtoDFA(const NFA& nfa) {
     FSA dfa;
     std::map<std::set<int>, int> dfaStates;
     std::queue<std::set<int>> unmarkedStates;
-    std::set<char> alphabet;
-
-    // Safety check for extremely large NFA
-    if (nfa.states.size() > 10000) {
-        throw std::runtime_error("NFA has too many states for DFA conversion");
-    }
-
+    
     // Collect alphabet symbols from NFA
+    std::set<char> alphabetSet;
     for (const auto& state : nfa.states) {
         for (const auto& [symbol, _] : state.transitions) {
-            alphabet.insert(symbol);
+            alphabetSet.insert(symbol);
         }
     }
-
-    // Create a mapping from characters to symbol indices
-    std::map<char, int> symbolToIndex;
-    int index = 0;
-    for (char symbol : alphabet) {
-        symbolToIndex[symbol] = index++;
-    }
+    // NEW: sort the alphabet to ensure consistent order
+    std::vector<char> alphabet(alphabetSet.begin(), alphabetSet.end());
+    std::sort(alphabet.begin(), alphabet.end());
     dfa.num_alphabet_symbols = alphabet.size();
-    dfa.alphabet = std::vector<char>(alphabet.begin(), alphabet.end());
-
+    dfa.alphabet = alphabet;
+    
     // Start with epsilon-closure of the start state
     std::set<int> initialState = epsilonClosure(nfa, {nfa.start_state});
     addDebug("Initial DFA state set: {" +
@@ -813,41 +804,39 @@ FSA NFAtoDFA(const NFA& nfa) {
     dfaStates[initialState] = 0;  // Assign 0 as the ID of the initial DFA state
     unmarkedStates.push(initialState);
     dfa.start_state = 0;
-
+    
     // Initialize transition function of the initial DFA state
     dfa.transition_function.clear();
-
+    
     // Create a trap/dead state for invalid transitions
     int trapState = -1;
-
+    
     // Process unmarked state sets
     while (!unmarkedStates.empty()) {
         std::set<int> currentStateSet = unmarkedStates.front();
         unmarkedStates.pop();
-
+        
         int currentDfaState = dfaStates[currentStateSet];
-
+        
         // Ensure there's room in the transition table
         while (dfa.transition_function.size() <= static_cast<size_t>(currentDfaState)) {
             dfa.transition_function.push_back(std::vector<int>(alphabet.size(), -1));
         }
-
+        
         // For each symbol in the alphabet
         int symbolIdx = 0;
         for (char symbol : alphabet) {
             // Compute the next state set using move and epsilon-closure
             std::set<int> nextStateSet = epsilonClosure(nfa, move(nfa, currentStateSet, symbol));
-
+            
             if (nextStateSet.empty()) {
                 // Create a trap state for invalid transitions if needed
                 if (trapState == -1) {
                     trapState = dfaStates.size();
                     dfaStates[std::set<int>()] = trapState;
-
                     while (dfa.transition_function.size() <= static_cast<size_t>(trapState)) {
                         dfa.transition_function.push_back(std::vector<int>(alphabet.size(), -1));
                     }
-
                     // Make the trap state transition to itself for all symbols
                     for (size_t i = 0; i < alphabet.size(); i++) {
                         dfa.transition_function[trapState][i] = trapState;
@@ -855,30 +844,24 @@ FSA NFAtoDFA(const NFA& nfa) {
                 }
                 dfa.transition_function[currentDfaState][symbolIdx] = trapState;
             } else {
-                // Check if this is a new state set
                 if (dfaStates.find(nextStateSet) == dfaStates.end()) {
                     int newDfaState = dfaStates.size();
                     dfaStates[nextStateSet] = newDfaState;
                     unmarkedStates.push(nextStateSet);
-
-                    // Ensure there's room in the transition table
                     while (dfa.transition_function.size() <= static_cast<size_t>(newDfaState)) {
                         dfa.transition_function.push_back(std::vector<int>(alphabet.size(), -1));
                     }
                 }
-
-                // Add the transition
                 dfa.transition_function[currentDfaState][symbolIdx] = dfaStates[nextStateSet];
             }
-
+            
             symbolIdx++;
         }
     }
-
+    
     // Determine accepting states - mark states containing NFA accepting states
     dfa.accepting_states.clear();
     for (const auto& [stateSet, dfaState] : dfaStates) {
-        // Check if any NFA state in the set is accepting
         for (int nfaState : stateSet) {
             if (nfa.accepting_states.find(nfaState) != nfa.accepting_states.end()) {
                 dfa.accepting_states.push_back(dfaState);
@@ -886,17 +869,17 @@ FSA NFAtoDFA(const NFA& nfa) {
             }
         }
     }
-
+    // NEW: sort accepting states for consistent ordering
+    std::sort(dfa.accepting_states.begin(), dfa.accepting_states.end());
+    
     dfa.num_states = dfaStates.size();
-    dfa.num_alphabet_symbols = alphabet.size();
-
-    // Safety check for extremely large DFAs
+    
     if (dfa.num_states > 10000) {
         throw std::runtime_error("DFA has too many states (" +
                                std::to_string(dfa.num_states) +
                                "), regex may be too complex");
     }
-
+    
     return dfa;
 }
 
