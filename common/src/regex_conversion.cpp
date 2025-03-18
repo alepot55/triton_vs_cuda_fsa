@@ -223,6 +223,10 @@ std::string preprocessRegex(const std::string regex) {
                 i += 4;
             }
         }
+        // Instead of transforming the optional operator, simply pass it through.
+        else if (regex[i] == '?') {
+            out.push_back(regex[i++]);
+        }
         // Handle optional operator '?' by converting to alternation (a|ε)
         else if (regex[i] == '?') {
             // If the preceding char is ')', find the matching '(' using an int index.
