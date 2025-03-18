@@ -29,10 +29,31 @@ include_directories(
     ${CUDA_DIR}/benchmarks
 )
 
-# Set the common library path
-set(COMMON_LIB ${COMMON_DIR}/build/libcommon.a)
-if(NOT EXISTS ${COMMON_LIB})
-    message(FATAL_ERROR "Common library not found at ${COMMON_LIB}. Run the script with proper setup.")
+# Aggiungere il target common (precedentemente in common/CMakeLists.txt)
+add_library(common STATIC
+    ${COMMON_DIR}/src/regex_conversion.cpp
+)
+target_include_directories(common PRIVATE
+    ${COMMON_DIR}/include
+    ${COMMON_DIR}/test
+)
+target_compile_options(common PRIVATE -Wall -Wextra)
+option(DEBUG_FSA "Enable debug output for FSA engine" OFF)
+if(DEBUG_FSA)
+    target_compile_definitions(common PRIVATE -DDEBUG_FSA)
+endif()
+option(CPU_ONLY "Build without CUDA dependencies" OFF)
+if(CPU_ONLY)
+    target_compile_definitions(common PRIVATE -DCPU_ONLY)
+else()
+    find_package(CUDA QUIET)
+    if(CUDA_FOUND)
+        message(STATUS "CUDA found, version: ${CUDA_VERSION}")
+        target_include_directories(common PRIVATE ${CUDA_INCLUDE_DIRS})
+    else()
+        message(WARNING "CUDA not found, building in CPU-only mode")
+        target_compile_definitions(common PRIVATE -DCPU_ONLY)
+    endif()
 endif()
 
 # Build CUDA library directly here instead of expecting a pre-built library
@@ -45,7 +66,7 @@ file(GLOB CUDA_SOURCES
 
 # Create CUDA library target
 add_library(cuda_fsa STATIC ${CUDA_SOURCES})
-target_link_libraries(cuda_fsa PRIVATE ${COMMON_LIB} ${CUDA_LIBRARIES} nvidia-ml)
+target_link_libraries(cuda_fsa PRIVATE common ${CUDA_LIBRARIES} nvidia-ml)
 set(CUDA_LIB cuda_fsa)
 
 # Add subdirectories for different test categories
@@ -65,7 +86,7 @@ add_executable(fsa_engine_cuda
 
 target_link_libraries(fsa_engine_cuda PRIVATE 
     ${CUDA_LIB}
-    ${COMMON_LIB}
+    common
     ${CUDA_LIBRARIES}
     nvidia-ml
     Threads::Threads

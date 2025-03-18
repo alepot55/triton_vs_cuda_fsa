@@ -3,7 +3,7 @@ add_executable(test_regex_conversion test_regex_conversion.cpp)
 
 # Link against the common library
 target_link_libraries(test_regex_conversion PRIVATE 
-    ${COMMON_LIB}
+    common
     Threads::Threads
 )
 

@@ -16,7 +16,7 @@ else()
     # Link against both CUDA and common libraries
     target_link_libraries(cuda_test_runner PRIVATE 
         ${CUDA_LIB}
-        ${COMMON_LIB}
+        common
         ${CUDA_LIBRARIES}
         Threads::Threads
     )
