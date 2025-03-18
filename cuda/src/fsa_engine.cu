@@ -12,45 +12,30 @@
 
 __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* output) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // Initial state
     int current_state = fsa->start_state;
-
-    // Process input string
     for (int i = 0; input_string[i] != '\0'; i++) {
         char c = input_string[i];
         int symbol = -1;
-
-        // Modified: use single-symbol mapping if applicable
-        if (fsa->num_alphabet_symbols == 1) {
+        // Fixed symbol mapping to match FSA's expectation
+        if (c == '1')
             symbol = 0;
-        } else {
-            if (c == '0') symbol = 0;
-            else if (c == '1') symbol = 1;
-            else {
-                // Invalid character in binary alphabet
-                output[thread_id] = false;
-                return;
-            }
+        else if (c == '0')
+            symbol = 1;
+        else {
+            output[thread_id] = false;
+            return;
         }
-
-        // Verify symbol validity
         if (symbol >= fsa->num_alphabet_symbols) {
             output[thread_id] = false;
             return;
         }
-
-        // Find transition
         int next_state = fsa->transition_matrix[current_state * MAX_SYMBOLS + symbol];
         if (next_state < 0) {
             output[thread_id] = false;
             return;
         }
-
         current_state = next_state;
     }
-
-    // Check if accepting state
     bool accepts = false;
     for (int i = 0; i < fsa->num_accepting_states; i++) {
         if (current_state == fsa->accepting_states[i]) {
@@ -58,7 +43,6 @@ __global__ void fsa_kernel(const CUDAFSA* fsa, const char* input_string, bool* o
             break;
         }
     }
-
     output[thread_id] = accepts;
 }
 
@@ -67,43 +51,24 @@ __global__ void fsa_kernel_batch(const GPUDFA* dfa, const char* input_strings,
                            int num_strings, char* results) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= num_strings) return;
-
-    // Get input string info
     int offset = string_offsets[tid];
     int length = string_lengths[tid];
-
-    // Initial state
     int current_state = dfa->start_state;
-
-    // Process each character
     for (int i = 0; i < length; i++) {
         char c = input_strings[offset + i];
         int symbol = -1;
-
-        // Modified: use single-symbol mapping if only one symbol is used
-        if (dfa->num_symbols == 1) {
+        // Fixed symbol mapping to match FSA's expectation
+        if (c == '1')
             symbol = 0;
-        } else {
-            if (c == '0') symbol = 0;
-            else if (c == '1') symbol = 1;
-            else {
-                results[tid] = 0;
-                return;
-            }
-        }
-
+        else if (c == '0')
+            symbol = 1;
+        else { results[tid] = 0; return; }
+        if (symbol >= dfa->num_symbols) { results[tid] = 0; return; }
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
         int next_state = dfa->transition_table[transition_idx];
-
-        if (next_state == -1) {
-            results[tid] = 0;
-            return;
-        }
-
+        if (next_state == -1) { results[tid] = 0; return; }
         current_state = next_state;
     }
-
-    // Final result
     results[tid] = dfa->accepting_states[current_state] ? 1 : 0;
 }
 
@@ -111,42 +76,23 @@ __global__ void fsa_kernel_fixed_length(const GPUDFA* dfa, const char* input_str
                                       int string_length, int num_strings, char* results) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= num_strings) return;
-
-    // Get input string starting position
     int offset = tid * string_length;
-
-    // Initial state
     int current_state = dfa->start_state;
-
-    // Process each character
     for (int i = 0; i < string_length; i++) {
         char c = input_strings[offset + i];
         int symbol = -1;
-
-        // Modified: use single-symbol mapping if applicable
-        if (dfa->num_symbols == 1) {
+        // Fixed symbol mapping to match FSA's expectation
+        if (c == '1')
             symbol = 0;
-        } else {
-            if (c == '0') symbol = 0;
-            else if (c == '1') symbol = 1;
-            else {
-                results[tid] = 0;
-                return;
-            }
-        }
-
+        else if (c == '0')
+            symbol = 1;
+        else { results[tid] = 0; return; }
+        if (symbol >= dfa->num_symbols) { results[tid] = 0; return; }
         int transition_idx = current_state * MAX_SYMBOLS + symbol;
         int next_state = dfa->transition_table[transition_idx];
-
-        if (next_state == -1) {
-            results[tid] = 0;
-            return;
-        }
-
+        if (next_state == -1) { results[tid] = 0; return; }
         current_state = next_state;
     }
-
-    // Final result
     results[tid] = dfa->accepting_states[current_state] ? 1 : 0;
 }
 

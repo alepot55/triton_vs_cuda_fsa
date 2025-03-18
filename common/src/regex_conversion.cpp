@@ -424,16 +424,16 @@ NFA applyKleeneStar(const NFA& nfa) {
     NFA result;
 
     // Create special structure to handle repetitions correctly
-    int start = result.addState();
-    int accept = result.addState(true);
+    int start = result.addState(true); // Make start state accepting for *
+    int accept = start; //result.addState(true);
     result.start_state = start;
 
     // Add original NFA states
-    int nfaOffset = 2;
+    int nfaOffset = 1; //2;
     result.copyStatesFrom(nfa, nfaOffset);
 
     // Add epsilon from start to accept (match empty string)
-    result.addEpsilonTransition(start, accept);
+    //result.addEpsilonTransition(start, accept);
 
     // Add epsilon from start to NFA start (enter the repetition)
     result.addEpsilonTransition(start, nfa.start_state + nfaOffset);
@@ -441,11 +441,16 @@ NFA applyKleeneStar(const NFA& nfa) {
     // For each accepting state in original NFA
     for (int acceptingState : nfa.accepting_states) {
         // Connect to final accept state
-        result.addEpsilonTransition(acceptingState + nfaOffset, accept);
+        //result.addEpsilonTransition(acceptingState + nfaOffset, accept);
 
         // Connect back to start of pattern for repetition
         result.addEpsilonTransition(acceptingState + nfaOffset, nfa.start_state + nfaOffset);
+        result.states[acceptingState + nfaOffset].is_accepting = true;
     }
+    if(nfa.accepting_states.size() == 0){
+        result.states[nfa.start_state + nfaOffset].is_accepting = true;
+    }
+
 
     return result;
 }
@@ -489,12 +494,13 @@ NFA createLiteralNFA(const std::string& literal) {
     }
 
     // Create a chain of states that strictly matches the sequence
-    int startState = nfa.addState(literal.length() == 0);  // Only accept empty string at start state
+    int startState = nfa.addState(false);  // Only accept empty string at start state
     nfa.start_state = startState;
 
     int currentState = startState;
     for (size_t i = 0; i < literal.length(); i++) {
-        int nextState = nfa.addState(i == literal.length() - 1);  // Only last state is accepting
+        bool isLast = (i == literal.length() - 1);
+        int nextState = nfa.addState(isLast);  // Only last state is accepting
         nfa.addTransition(currentState, literal[i], nextState);
         currentState = nextState;
     }
