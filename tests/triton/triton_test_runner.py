@@ -11,6 +11,7 @@ import os
 import argparse
 import time
 import re
+import torch
 
 # Add path to the directories properly
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,7 +22,7 @@ triton_src_path = os.path.join(project_root, 'triton', 'src')
 sys.path.insert(0, triton_src_path)
 
 # Import the function directly from the module
-from fsa_engine_triton import fsa_triton
+from triton_fsa_engine import fsa_triton
 
 class TestCase:
     """Represents a test case similar to the C++ TestCase struct."""
@@ -33,6 +34,27 @@ class TestCase:
         self.expected_result = expected
         self.actual_result = False
         self.metrics = {}
+
+
+def string_to_tensor(input_str, batch_size=1):
+    """Convert a string of '0's and '1's to a tensor of integers."""
+    if not input_str:
+        # Handle empty string case - create a tensor with a single zero
+        return torch.zeros((batch_size, 1), dtype=torch.int32)
+    
+    # Convert each character to an integer
+    input_list = [int(c) for c in input_str]
+    input_len = len(input_list)
+    
+    # Create a tensor and repeat it for the batch
+    input_tensor = torch.tensor(input_list, dtype=torch.int32)
+    if batch_size > 1:
+        input_tensor = input_tensor.repeat(batch_size, 1)
+    else:
+        # Reshape to (batch_size, input_len)
+        input_tensor = input_tensor.view(1, input_len)
+    
+    return input_tensor
 
 
 def parse_test_file(filename):
@@ -99,34 +121,18 @@ def run_test(test, batch_size=1, verbose=False):
         print(f"  Expected: {test.expected_result}")
     
     try:
-        # For demonstration purpose - these values would normally be derived from regex
-        fsa_num_states = 2
-        fsa_num_symbols = 2
-        fsa_start_state = 0
-        num_accepting_states = 1
-        input_len = len(test.input) if test.input else 0
-        
-        # Placeholder arrays - in real implementation, these would be properly allocated
-        fsa_ptr = None  # This would be a pointer to FSA representation
-        input_string_ptr = test.input  # For demonstration
-        output_ptr = [0]  # For storing the result
+        # Convert the input string to a tensor
+        input_tensor = string_to_tensor(test.input, batch_size)
         
         # Run the Triton FSA engine
-        start_time = time.time()
-        metrics = fsa_triton(
-            fsa_ptr=fsa_ptr,
-            input_string_ptr=input_string_ptr,
-            output_ptr=output_ptr,
-            input_len=input_len,
-            fsa_num_states=fsa_num_states,
-            fsa_num_symbols=fsa_num_symbols,
-            fsa_start_state=fsa_start_state,
-            num_accepting_states=num_accepting_states,
-            grid_size=1
+        metrics, output = fsa_triton(
+            input_strings=input_tensor,
+            regex=test.regex,
+            batch_size=batch_size
         )
         
         # Save metrics and result
-        test.actual_result = bool(output_ptr[0])
+        test.actual_result = bool(output[0])
         test.metrics = metrics
         
         return test.actual_result == test.expected_result

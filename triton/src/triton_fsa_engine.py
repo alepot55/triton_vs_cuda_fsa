@@ -1,3 +1,4 @@
+import os
 import triton
 import triton.language as tl
 import numpy as np
@@ -8,8 +9,13 @@ import ctypes
 import subprocess
 from typing import Optional
 
+# path to ./regex_conversion.so, nel caso questo file fosse eseguito in un contesto diverso
+# Assicurati di avere il file regex_conversion.so nella stessa directory
+__file_path = os.path.dirname(os.path.abspath(__file__))
+
+
 # Carica la libreria condivisa
-lib = ctypes.CDLL('./triton/src/regex_conversion.so')
+lib = ctypes.CDLL(os.path.join(__file_path, 'regex_conversion.so'))
 
 # Definizione della struttura FSAData
 class FSAData(ctypes.Structure):
