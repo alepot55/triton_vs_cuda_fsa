@@ -57,6 +57,27 @@ def get_gpu_utilization() -> float:
         return float(result.decode('utf-8').strip())
     except Exception:
         return 0.0
+    
+def string_to_tensor(input_str, batch_size=1):
+    """Convert a string of '0's and '1's to a tensor of integers."""
+    if not input_str:
+        # Handle empty string case - create a tensor with a single zero
+        return torch.empty((batch_size, 0), dtype=torch.int32)
+    
+    # Convert each character to an integer
+    input_list = [int(c) for c in input_str]
+    input_len = len(input_list)
+    
+    # Create a tensor and repeat it for the batch
+    input_tensor = torch.tensor(input_list, dtype=torch.int32)
+    if batch_size > 1:
+        input_tensor = input_tensor.repeat(batch_size, 1)
+    else:
+        # Reshape to (batch_size, input_len)
+        input_tensor = input_tensor.view(1, input_len)
+    
+    return input_tensor
+
 
 # Kernel Triton corretto
 @triton.jit
@@ -117,6 +138,8 @@ def fsa_triton(
         Metriche di performance e risultati dell'elaborazione.
     """
     metrics = BenchmarkMetrics()
+
+    input_strings = string_to_tensor(input_strings, batch_size)
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA non disponibile: esecuzione su GPU richiesta.")

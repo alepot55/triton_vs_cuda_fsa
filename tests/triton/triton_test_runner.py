@@ -36,27 +36,6 @@ class TestCase:
         self.metrics = {}
 
 
-def string_to_tensor(input_str, batch_size=1):
-    """Convert a string of '0's and '1's to a tensor of integers."""
-    if not input_str:
-        # Handle empty string case - create a tensor with a single zero
-        return torch.zeros((batch_size, 1), dtype=torch.int32)
-    
-    # Convert each character to an integer
-    input_list = [int(c) for c in input_str]
-    input_len = len(input_list)
-    
-    # Create a tensor and repeat it for the batch
-    input_tensor = torch.tensor(input_list, dtype=torch.int32)
-    if batch_size > 1:
-        input_tensor = input_tensor.repeat(batch_size, 1)
-    else:
-        # Reshape to (batch_size, input_len)
-        input_tensor = input_tensor.view(1, input_len)
-    
-    return input_tensor
-
-
 def parse_test_file(filename):
     """Parse the test file and extract test cases."""
     tests = []
@@ -121,12 +100,10 @@ def run_test(test, batch_size=1, verbose=False):
         print(f"  Expected: {test.expected_result}")
     
     try:
-        # Convert the input string to a tensor
-        input_tensor = string_to_tensor(test.input, batch_size)
         
         # Run the Triton FSA engine
         metrics, output = fsa_triton(
-            input_strings=input_tensor,
+            input_strings=test.input,
             regex=test.regex,
             batch_size=batch_size
         )

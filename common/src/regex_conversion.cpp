@@ -751,17 +751,9 @@ FSA NFAtoDFA(const NFA& nfa) {
     std::map<std::set<int>, int> dfaStates;
     std::queue<std::set<int>> unmarkedStates;
     
-    // Collect alphabet symbols from NFA
-    std::set<char> alphabetSet;
-    for (const auto& state : nfa.states) {
-        for (const auto& [symbol, _] : state.transitions) {
-            alphabetSet.insert(symbol);
-        }
-    }
-    // NEW: sort the alphabet to ensure consistent order
-    std::vector<char> alphabet(alphabetSet.begin(), alphabetSet.end());
-    std::sort(alphabet.begin(), alphabet.end());
-    dfa.num_alphabet_symbols = alphabet.size();
+    // Fixed alphabet: always {'0', '1'}
+    std::vector<char> alphabet = {'0', '1'};
+    dfa.num_alphabet_symbols = 2;
     dfa.alphabet = alphabet;
     
     // Start with epsilon-closure of the start state
