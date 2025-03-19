@@ -4,23 +4,33 @@
 
 // NVML functions definitions
 bool initNVML() {
+#ifdef NO_NVML
+    std::cout << "Warning: NVML support not available. Some metrics will be unavailable." << std::endl;
+    return false;
+#else
     nvmlReturn_t result = nvmlInit();
     if (result != NVML_SUCCESS) {
         std::cerr << "Failed to initialize NVML: " << nvmlErrorString(result) << std::endl;
         return false;
     }
     return true;
+#endif
 }
 
 void shutdownNVML() {
+#ifndef NO_NVML
     nvmlReturn_t result = nvmlShutdown();
     if (result != NVML_SUCCESS) {
         std::cerr << "Failed to shutdown NVML: " << nvmlErrorString(result) << std::endl;
     }
+#endif
 }
 
 // Get GPU utilization
 double getGPUUtilization() {
+#ifdef NO_NVML
+    return 0.0; // Stub implementation when NVML not available
+#else
     nvmlDevice_t device;
     nvmlUtilization_t utilization;
     
@@ -37,6 +47,7 @@ double getGPUUtilization() {
     }
     
     return utilization.gpu;
+#endif
 }
 
 // Get memory usage

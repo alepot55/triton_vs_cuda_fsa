@@ -7,11 +7,11 @@
 #include <iomanip>
 #include <nvml.h>
 
-#include "../../common/benchmark/benchmark_metrics.h"
-#include "../../common/test/test_case.h"
-#include "../../common/benchmark/cmdline.h"
-#include "../src/cuda_fsa_engine.h"
-#include "../../common/include/fsa_definition.h"
+#include "../../../common/benchmark/benchmark_metrics.h"
+#include "../../../common/test/test_case.h"
+#include "../../../common/benchmark/cmdline.h"
+#include "../../../cuda/src/cuda_fsa_engine.h"
+#include "../../../common/include/fsa_definition.h"
 
 // External declarations for NVML functions
 extern bool initNVML();
@@ -40,25 +40,12 @@ int main(int argc, char* argv[]) {
             std::cerr << "Could not initialize NVML. Some metrics will be unavailable." << std::endl;
         }
         
-        // Run tests if requested
-        if (run_tests) {
-            std::vector<TestCase> tests;
-            if (loadTestsFromFile(test_file, tests)) {
-                runAllTests(tests, batch_size, verbose);
-                shutdownNVML();
-                return 0;
-            } else {
-                shutdownNVML();
-                return 1;
-            }
-        }
-        
         // Print benchmark info
         if (verbose) {
             std::cout << "Regex: " << regex << std::endl;
             std::cout << "Testing string: " << input << std::endl;
             std::cout << "Batch size: " << batch_size << std::endl;
-            std::cout << "Mode: GPU-optimized CUDA (default)" << std::endl;
+            std::cout << "Mode: GPU-optimized CUDA (benchmark)" << std::endl;
         }
         
         // Convert regex to FSA
@@ -122,34 +109,34 @@ int main(int argc, char* argv[]) {
         float gpu_util = static_cast<float>(getGPUUtilization());
         float memory_bandwidth = 0.0f; // Placeholder for actual calculation
 
-        // Output results
+        // Output results in CSV format for easy parsing (fields separated by semicolons)
         if (!results.empty()) {
             // Calculate the number of symbols (typically 2 for binary alphabet)
             int num_symbols = 2;  // Default for binary alphabet (0,1)
-            int accepting_state_count = fsa.accepting_states.size();
             
-            std::cout << "Benchmark: CUDA" << std::endl;
-            std::cout << "Input String: " << input << std::endl;
-            std::cout << "Accepts: " << (results[0] ? "true" : "false") << std::endl;
-            std::cout << "Execution Time (total): " << std::fixed << std::setprecision(3) 
-                      << execution_time_ms << " ms" << std::endl;
-            std::cout << "Kernel Execution Time: " << std::fixed << std::setprecision(6)
-                      << kernel_time_ms << " ms" << std::endl;
-            std::cout << "Memory Transfer Time: " << std::fixed << std::setprecision(6)
-                      << transfer_time_ms << " ms" << std::endl;
-            std::cout << "Memory Used: " << memory_used << " bytes" << std::endl;
-            std::cout << "GPU Utilization: " << gpu_util << "%" << std::endl;
-            std::cout << "Memory Bandwidth: " << memory_bandwidth << " MB/s" << std::endl;
-            std::cout << "FSA: " << fsa.num_states << " states, " << num_symbols << " symbols, "
-                      << fsa.accepting_states.size() << " accepting, start state " << fsa.start_state << std::endl;
-            std::cout << "Result: " << (results[0] ? "ACCEPT" : "REJECT") << std::endl;
-
-            // Ensure consistent output format with the right number of fields
-            // Corrected output format to match header: implementation,input_string,batch_size,regex_pattern,match_result,execution_time_ms,kernel_time_ms,mem_transfer_time_ms,memory_used_bytes,gpu_util_percent,num_states,match_success,compilation_time_ms,num_symbols,num_accepting_states,start_state
-            std::cout << "CUDA," << input << "," << batch_size << "," << regex << ","
-                      << "1," << execution_time_ms << "," << kernel_time_ms << ",0,0,0,"
-                      << fsa.num_states << ",True,0.0," << fsa.num_alphabet_symbols << ","
-                      << accepting_state_count << "," << fsa.start_state << std::endl;
+            // Output in format for CSV parsing
+            std::cout << "CUDA;" << input << ";" << batch_size << ";" << regex << ";"
+                      << execution_time_ms << ";" << kernel_time_ms << ";" << transfer_time_ms << ";"
+                      << memory_used << ";" << memory_bandwidth << ";"
+                      << fsa.num_states << ";" << (results[0] ? "True" : "False") << ";;"
+                      << gpu_util << ";" << num_symbols << ";" << fsa.accepting_states.size() << ";"
+                      << fsa.start_state << std::endl;
+            
+            if (verbose) {
+                std::cout << "\nBenchmark details:" << std::endl;
+                std::cout << "Execution Time (total): " << std::fixed << std::setprecision(3) 
+                          << execution_time_ms << " ms" << std::endl;
+                std::cout << "Kernel Execution Time: " << std::fixed << std::setprecision(6)
+                          << kernel_time_ms << " ms" << std::endl;
+                std::cout << "Memory Transfer Time: " << std::fixed << std::setprecision(6)
+                          << transfer_time_ms << " ms" << std::endl;
+                std::cout << "Memory Used: " << memory_used << " bytes" << std::endl;
+                std::cout << "GPU Utilization: " << gpu_util << "%" << std::endl;
+                std::cout << "Memory Bandwidth: " << memory_bandwidth << " MB/s" << std::endl;
+                std::cout << "FSA: " << fsa.num_states << " states, " << num_symbols << " symbols, "
+                          << fsa.accepting_states.size() << " accepting, start state " << fsa.start_state << std::endl;
+                std::cout << "Result: " << (results[0] ? "ACCEPT" : "REJECT") << std::endl;
+            }
         } else {
             std::cerr << "Error: No results returned" << std::endl;
         }
@@ -166,40 +153,4 @@ int main(int argc, char* argv[]) {
         shutdownNVML();
         return 1;
     }
-}
-
-// Add missing definition for runAllTests
-#include <chrono>
-#include <iostream>
-#include "../../common/test/test_case.h" // Ensure correct relative include
-
-void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
-    std::cout << "Running " << tests.size() << " tests with batch size " << batch_size << "...\n";
-    int passed = 0;
-    double total_time = 0.0;
-    
-    for (auto &test : tests) {
-        auto start = std::chrono::high_resolution_clock::now();
-        // Simulate running the test.
-        // Here we simply set actual_result to expected_result.
-        test.actual_result = test.expected_result;
-        auto end = std::chrono::high_resolution_clock::now();
-        double exec_time = std::chrono::duration<double, std::milli>(end - start).count();
-        test.metrics.execution_time_ms = exec_time;
-        total_time += exec_time;
-        
-        if (test.actual_result == test.expected_result)
-            passed++;
-            
-        if (verbose) {
-            std::cout << "Test " << test.name << ": " 
-                      << (test.actual_result ? "PASS" : "FAIL") 
-                      << " (" << exec_time << " ms)\n";
-        }
-    }
-    
-    std::cout << "\nSummary:\n"
-              << "  Passed: " << passed << "/" << tests.size()
-              << " (" << (tests.empty() ? 0 : (passed * 100.0 / tests.size())) << "%)\n"
-              << "  Total execution time: " << total_time << " ms\n";
 }

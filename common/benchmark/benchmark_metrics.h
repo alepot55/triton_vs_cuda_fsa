@@ -27,3 +27,7 @@ struct BenchmarkMetrics {
 // NVML utility functions
 bool initNVML();
 void shutdownNVML();
+
+// Add these missing function declarations
+double getGPUUtilization();
+size_t getMemoryUsage();

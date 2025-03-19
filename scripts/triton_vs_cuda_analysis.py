@@ -3,6 +3,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from pathlib import Path
+import argparse
+
+# Parse arguments
+parser = argparse.ArgumentParser(description="Analyze benchmark results comparing CUDA and Triton implementations")
+parser.add_argument('--input-file', type=str, help='Path to the benchmark results CSV file')
+args = parser.parse_args()
 
 # Impostazione stile per i grafici
 plt.style.use('ggplot')
@@ -11,7 +17,11 @@ plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['font.size'] = 12
 
 # Caricamento dei dati
-results_path = Path('../results/benchmark_results.csv')
+if args.input_file:
+    results_path = args.input_file
+else:
+    results_path = Path('../results/benchmark_results.csv')
+
 df = pd.read_csv(results_path)
 
 # Conversione del tempo a millisecondi come float
