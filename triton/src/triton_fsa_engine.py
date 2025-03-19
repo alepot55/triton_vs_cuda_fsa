@@ -9,7 +9,7 @@ import subprocess
 from typing import Optional
 
 # Carica la libreria condivisa
-lib = ctypes.CDLL('./regex_conversion.so')
+lib = ctypes.CDLL('./triton/src/regex_conversion.so')
 
 # Definizione della struttura FSAData
 class FSAData(ctypes.Structure):
@@ -27,12 +27,6 @@ class FSAData(ctypes.Structure):
 
 lib.fsa_to_data.restype = ctypes.POINTER(FSAData)
 lib.free_fsa_data.argtypes = [ctypes.POINTER(FSAData)]
-
-# costante per tl.pointer_type(tl.int32)
-INT32 = tl.int32
-POINTER_INT32 = tl.pointer_type(tl.int32)
-INT1 = tl.int1
-POINTER_INT1 = tl.pointer_type(tl.int1)
 
 # Classe per le metriche di benchmark
 class BenchmarkMetrics:
@@ -61,32 +55,32 @@ def get_gpu_utilization() -> float:
 # Kernel Triton corretto
 @triton.jit
 def fsa_kernel(
-    transitions_ptr: POINTER_INT32,
-    is_accepting_ptr: POINTER_INT1,
-    input_strings_ptr: POINTER_INT32,
-    output_ptr: POINTER_INT1,
-    input_len: INT32,
-    start_state: INT32,
-    num_states: INT32,
-    num_symbols: INT32,
-    batch_size: INT32
+    transitions_ptr,
+    is_accepting_ptr,
+    input_strings_ptr,
+    output_ptr,
+    input_len: tl.constexpr,
+    start_state: tl.constexpr,
+    num_states: tl.constexpr,
+    num_symbols: tl.constexpr,
+    batch_size: tl.constexpr,    
 ):
     pid = tl.program_id(0)
     if pid >= batch_size:
         return
     state = start_state
+    error_flag = 0
     for i in range(input_len):
         base_offset = pid * input_len
         current_offset = base_offset + i
         symbol = tl.load(input_strings_ptr + current_offset)
-        if symbol >= num_symbols or symbol < 0:
-            tl.store(output_ptr + pid, 0)
-            return
-        trans_offset = state * num_symbols + symbol
-        state = tl.load(transitions_ptr + trans_offset)
-        if state >= num_states:
-            tl.store(output_ptr + pid, 0)
-            return
+        invalid_symbol = (symbol >= num_symbols) | (symbol < 0)
+        new_state = tl.load(transitions_ptr + (state * num_symbols + symbol))
+        state = tl.where(invalid_symbol != 0, state, new_state)
+        invalid_state = (state >= num_states)
+        error_flag = error_flag | invalid_symbol | invalid_state
+    final_result = tl.where(error_flag != 0, 0, tl.load(is_accepting_ptr + state))
+    tl.store(output_ptr + pid, final_result)
     is_accept = tl.load(is_accepting_ptr + state)
     tl.store(output_ptr + pid, is_accept)
 
@@ -202,7 +196,7 @@ def fsa_triton(
 # Esempio di utilizzo
 if __name__ == "__main__":
     input_strings = torch.tensor([[0, 1, 0], [1, 0, 1]], dtype=torch.int32).cuda()
-    regex = "(0|1)*"
+    regex = "(0|1)*1"
     metrics, results = fsa_triton(input_strings, regex, batch_size=2)
     print(f"Risultati dell'accettazione: {results.cpu().numpy()}")
     print(f"[Triton FSA Engine] Metriche di performance:")

@@ -9,7 +9,7 @@ import gc
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the FSA Triton function
-from src.fsa_engine_triton import fsa_triton
+from triton.src.triton_fsa_engine import fsa_triton
 
 def run_triton_benchmark(input_string="0101", batch_size=1, regex="(0|1)*1", verbose=False):
     """
