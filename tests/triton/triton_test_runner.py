@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
 """
 Triton Test Runner
-
-This script runs the Triton FSA implementation on a set of test cases
-from a specified test file, similar to how the CUDA test runner works.
 """
 
 import sys
 import os
 import argparse
 import time
-import re
 import torch
 
-# Add path to the directories properly
+# Add project paths
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, 'triton', 'src'))
 
-# Add the triton/src directory directly to the path
-triton_src_path = os.path.join(project_root, 'triton', 'src')
-sys.path.insert(0, triton_src_path)
-
-# Import the function directly from the module
 from triton_fsa_engine import fsa_triton
 
+# ANSI color codes
+class Colors:
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+
 class TestCase:
-    """Represents a test case similar to the C++ TestCase struct."""
-    
     def __init__(self, name="", regex="", input_str="", expected=True):
         self.name = name
         self.regex = regex
@@ -34,7 +33,6 @@ class TestCase:
         self.expected_result = expected
         self.actual_result = False
         self.metrics = {}
-
 
 def parse_test_file(filename):
     """Parse the test file and extract test cases."""
@@ -85,22 +83,20 @@ def parse_test_file(filename):
                 tests.append(TestCase(current_section, regex, input_str, expected))
     
     except Exception as e:
-        print(f"Error loading test file: {e}")
+        print(f"{Colors.RED}Error loading test file: {e}{Colors.ENDC}")
         return []
     
     return tests
 
-
 def run_test(test, batch_size=1, verbose=False):
     """Run a single test case using the Triton FSA engine."""
     if verbose:
-        print(f"Running test: {test.name}")
-        print(f"  Regex: {test.regex}")
-        print(f"  Input: {test.input}")
-        print(f"  Expected: {test.expected_result}")
+        print(f"{Colors.CYAN}• {test.name}{Colors.ENDC}")
+        print(f"  regex: {test.regex}")
+        print(f"  input: '{test.input}'")
+        print(f"  expect: {Colors.GREEN if test.expected_result else Colors.RED}{'✓' if test.expected_result else '✗'}{Colors.ENDC}")
     
     try:
-        
         # Run the Triton FSA engine
         metrics, output = fsa_triton(
             input_strings=test.input,
@@ -112,22 +108,42 @@ def run_test(test, batch_size=1, verbose=False):
         test.actual_result = bool(output[0])
         test.metrics = metrics
         
+        if verbose:
+            status = "✓" if test.actual_result == test.expected_result else "✗"
+            status_color = Colors.GREEN if status == "✓" else Colors.RED
+            print(f"  result: {Colors.GREEN if test.actual_result else Colors.RED}{'✓' if test.actual_result else '✗'}{Colors.ENDC} [{status_color}{status}{Colors.ENDC}]")
+            if hasattr(metrics, 'execution_time'):
+                print(f"  time: {metrics.execution_time:.2f}ms")
+            print()
+        
         return test.actual_result == test.expected_result
     
     except Exception as e:
-        print(f"Error running test {test.name}: {e}")
+        if verbose:
+            print(f"  {Colors.RED}error: {e}{Colors.ENDC}\n")
         return False
-
 
 def run_all_tests(tests, batch_size=1, verbose=False):
     """Run all tests and print results."""
-    print(f"Running {len(tests)} tests with batch size {batch_size}...")
+    print(f"{Colors.CYAN}{len(tests)} tests, batch {batch_size}{Colors.ENDC}")
     
     passed = 0
     total_time = 0.0
     failed_tests = []
+    start_time = time.time()
+    
+    # Progress indicators
+    total_tests = len(tests)
+    current_test = 0
     
     for test in tests:
+        current_test += 1
+        
+        # Show progress only in non-verbose mode
+        if not verbose:
+            sys.stdout.write(f"\r[{current_test}/{total_tests}] ")
+            sys.stdout.flush()
+        
         result = run_test(test, batch_size, verbose)
         
         if result:
@@ -137,39 +153,40 @@ def run_all_tests(tests, batch_size=1, verbose=False):
         
         if hasattr(test.metrics, 'execution_time'):
             total_time += test.metrics.execution_time
-        
-        if verbose:
-            result_str = "PASS" if result else "FAIL"
-            print(f"Test {test.name}: {result_str}")
     
-    # Print summary similar to CUDA test runner
-    print("\nTest Summary:")
-    print(f"  Passed: {passed}/{len(tests)} ({passed * 100.0 / len(tests) if tests else 0:.2f}%)")
-    print(f"  Total execution time: {total_time:.4f} ms")
+    # Clear progress line
+    if not verbose:
+        sys.stdout.write('\r' + ' ' * 20 + '\r')
+    
+    elapsed_time = time.time() - start_time
+    
+    # Print summary with minimal formatting
+    print(f"{Colors.CYAN}Summary:{Colors.ENDC}")
+    
+    pass_rate = passed * 100.0 / len(tests) if tests else 0
+    status_color = Colors.GREEN if pass_rate == 100 else Colors.RED if pass_rate < 50 else Colors.YELLOW
+    
+    print(f"  passed: {passed}/{len(tests)} {status_color}({pass_rate:.1f}%){Colors.ENDC}")
+    print(f"  time: {total_time:.2f}ms (engine) / {elapsed_time*1000:.2f}ms (total)")
     
     # Show failed tests if any
     if failed_tests:
-        print("\nFailed tests:")
+        print(f"\n{Colors.RED}Failed:{Colors.ENDC}")
         for test_name in failed_tests:
             test = next((t for t in tests if t.name == test_name), None)
             if test:
-                print(f"  {test.name}:")
-                print(f"    Regex: {test.regex}")
-                print(f"    Input: '{test.input}'")
-                print(f"    Expected: {'ACCEPT' if test.expected_result else 'REJECT'}")
-                print(f"    Got: {'ACCEPT' if test.actual_result else 'REJECT'}")
+                print(f"  • {test.name}")
+                print(f"    regex: {test.regex}")
+                print(f"    input: '{test.input}'")
+                print(f"    expected: {Colors.GREEN if test.expected_result else Colors.RED}{'✓' if test.expected_result else '✗'}{Colors.ENDC}")
+                print(f"    got: {Colors.RED if test.expected_result else Colors.GREEN}{'✓' if test.actual_result else '✗'}{Colors.ENDC}")
     
-    if verbose:
-        print("\nDetailed Results:")
-        for test in tests:
-            result = "PASS" if test.actual_result == test.expected_result else "FAIL"
-            print(f"  {test.name}: {result} (expected {test.expected_result}, got {test.actual_result})")
-
+    # Return simple results string for the shell script
+    return f"Passed: {passed}/{len(tests)}"
 
 def main():
     parser = argparse.ArgumentParser(description="Run tests for Triton FSA implementation")
-    parser.add_argument("test_file", nargs="?", default="../common/data/tests/extended_tests.txt", 
-                        help="Test file path (default: ../common/data/tests/extended_tests.txt)")
+    parser.add_argument("test_file", nargs="?", default="../common/data/tests/extended_tests.txt")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--batch-size", "-b", type=int, default=1, help="Batch size for testing")
     
@@ -180,19 +197,20 @@ def main():
         script_dir = os.path.dirname(os.path.abspath(__file__))
         args.test_file = os.path.normpath(os.path.join(script_dir, args.test_file))
     
-    print(f"Running Triton tests from: {args.test_file}")
-    print(f"Batch size: {args.batch_size}")
+    print(f"{Colors.CYAN}Triton FSA Tests{Colors.ENDC}")
+    print(f"file: {args.test_file}")
+    print(f"batch: {args.batch_size}")
     
     tests = parse_test_file(args.test_file)
     if not tests:
-        print("No tests found in file")
+        print(f"{Colors.RED}No tests found{Colors.ENDC}")
         return 1
     
-    print(f"Found {len(tests)} test cases")
+    print("-" * 30)
     
-    run_all_tests(tests, args.batch_size, args.verbose)
+    result = run_all_tests(tests, args.batch_size, args.verbose)
+    print(result)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

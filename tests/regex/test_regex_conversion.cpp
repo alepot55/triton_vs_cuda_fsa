@@ -7,6 +7,16 @@
 #include <chrono>
 #include <iomanip>
 
+// ANSI color codes
+namespace Color {
+    const std::string RESET = "\033[0m";
+    const std::string BOLD = "\033[1m";
+    const std::string RED = "\033[31m";
+    const std::string GREEN = "\033[32m";
+    const std::string YELLOW = "\033[33m";
+    const std::string CYAN = "\033[36m";
+}
+
 struct TestCase {
     std::string name;
     std::string regex;
@@ -85,13 +95,18 @@ int main(int argc, char** argv) {
         testFile = argv[1];
     }
     
+    std::cout << Color::CYAN << "Regex Conversion Tests" << Color::RESET << std::endl;
+    std::cout << "file: " << testFile << std::endl;
+    
     std::vector<TestCase> tests = parseTestFile(testFile);
     
     if (tests.empty()) {
-        std::cerr << "No tests found in file" << std::endl;
+        std::cerr << Color::RED << "No tests found" << Color::RESET << std::endl;
         return 1;
     }
     
+    std::cout << "-----------------------------" << std::endl;
+    std::cout << Color::CYAN << tests.size() << " tests" << Color::RESET << std::endl;
     
     // Initialize FSA engine
     FSAEngine engine;
@@ -101,8 +116,15 @@ int main(int argc, char** argv) {
     
     auto startTime = std::chrono::high_resolution_clock::now();
     
+    // Progress counter
+    int total = tests.size();
+    int current = 0;
+    
     // Run tests - CPU only, no GPU execution
     for (const auto& test : tests) {
+        current++;
+        std::cout << "\r[" << current << "/" << total << "] " << std::flush;
+        
         bool result = false;
         try {
             // Convert regex to DFA and run on CPU only
@@ -113,42 +135,42 @@ int main(int argc, char** argv) {
                 passed++;
             } else {
                 failed++;
-                std::string errorMsg = "✗ " + test.name + " - Expected: " + 
-                                       (test.expected ? "true" : "false") + 
-                                       ", Got: " + (result ? "true" : "false");
+                std::string errorMsg = "• " + test.name + 
+                                       " (expected: " + (test.expected ? "✓" : "✗") + 
+                                       ", got: " + (result ? "✓" : "✗") + ")";
                 failedTests.push_back(errorMsg);
-                
-                // Print additional debug info for failed tests
-                std::string debugLog = getConversionDebugLog();
-                
-                // Extract relevant parts of debug log if available
-                if (!debugLog.empty()) {
-                    std::istringstream iss(debugLog);
-                    std::string line;
-                    while (std::getline(iss, line)) {
-                        if (line.find("ERROR:") != std::string::npos ||
-                            line.find("DEBUG: Postfix expression:") != std::string::npos) {
-                        }
-                    }
-                }
             }
         } catch (const std::exception& e) {
             failed++;
-            std::string errorMsg = "✗ " + test.name + " - Exception: " + e.what();
+            std::string errorMsg = "• " + test.name + " - Error: " + e.what();
             failedTests.push_back(errorMsg);
         }
     }
     
-    // New block to output failed test details if any
-    if (!failedTests.empty()) {
-        std::cerr << "Failed tests details:" << std::endl;
-        for (const auto& msg : failedTests) {
-            std::cerr << msg << std::endl;
-        }
-    }
-
+    // Clear progress line
+    std::cout << "\r" << std::string(20, ' ') << "\r" << std::flush;
+    
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    
+    // Print minimal summary
+    std::cout << Color::CYAN << "Summary:" << Color::RESET << std::endl;
+    
+    double pass_percent = (tests.size() > 0) ? (passed * 100.0 / tests.size()) : 0;
+    std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
+    
+    std::cout << "  passed: " << passed << "/" << tests.size() 
+              << " " << status_color << "(" << std::fixed << std::setprecision(1) 
+              << pass_percent << "%)" << Color::RESET << std::endl;
+    std::cout << "  time: " << duration.count() << "ms" << std::endl;
+    
+    // Minimal failed test reporting
+    if (!failedTests.empty()) {
+        std::cout << Color::RED << "\nFailed:" << Color::RESET << std::endl;
+        for (const auto& msg : failedTests) {
+            std::cout << "  " << msg << std::endl;
+        }
+    }
             
     return failed > 0 ? 1 : 0;
 }
