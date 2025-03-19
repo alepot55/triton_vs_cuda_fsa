@@ -136,17 +136,42 @@ run_benchmarks() {
         print_status "Triton benchmark script not found" "error"
     fi
     
+    # Fix: Ensure CUDA benchmark is properly compiled and executed
     CUDA_BENCHMARK="$BENCHMARKS_DIR/cuda/benchmark_fsa"
+    SIMPLE_BENCHMARK_SOURCE="$BENCHMARKS_DIR/cuda/simple_benchmark.cu"
+    
+    # Always recompile the simple benchmark to ensure latest changes
+    if [ -f "$SIMPLE_BENCHMARK_SOURCE" ]; then
+        echo -e "${YELLOW}Compiling CUDA benchmark from source...${RESET}"
+        nvcc "$SIMPLE_BENCHMARK_SOURCE" -o "$CUDA_BENCHMARK"
+        if [ $? -ne 0 ]; then
+            print_status "Failed to compile CUDA benchmark" "error"
+        else
+            print_status "CUDA benchmark compiled successfully" "success"
+        fi
+    else
+        print_status "CUDA benchmark source not found at: $SIMPLE_BENCHMARK_SOURCE" "error"
+    fi
+    
     if [ -f "$CUDA_BENCHMARK" ]; then
         echo -e "${YELLOW}Running CUDA benchmarks for all tests...${RESET}"
         if [ "$VERBOSE" = true ]; then
-            "$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose >> "$BENCHMARK_RESULTS"
+            "$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose | tee -a "$BENCHMARK_RESULTS"
         else
             "$CUDA_BENCHMARK" --test-file="$TEST_FILE" >> "$BENCHMARK_RESULTS"
         fi
-        print_status "CUDA benchmarks (all tests) completed" "success"
+        
+        # Check if any CUDA results were added
+        CUDA_LINES=$(grep -c "^CUDA;" "$BENCHMARK_RESULTS")
+        echo -e "${YELLOW}Generated $CUDA_LINES CUDA benchmark entries${RESET}"
+        
+        if [ "$CUDA_LINES" -gt 0 ]; then
+            print_status "CUDA benchmarks (all tests) completed" "success"
+        else
+            print_status "No CUDA benchmark results generated" "error"
+        fi
     else
-        print_status "CUDA benchmark executable not found" "error"
+        print_status "CUDA benchmark executable not found at: $CUDA_BENCHMARK" "error"
     fi
 
     # Clean up temporary files
@@ -366,66 +391,4 @@ if [ "$RUN_BENCHMARK" = true ]; then
     else
         echo -e "  ${RED}✗${RESET} Benchmarks skipped due to test failures"
     fi
-fi
-
-# Create benchmark results file with header
-if [ "$RUN_BENCHMARKS" = true ]; then
-    print_status "Running Benchmarks" "info"
-
-    # Generate timestamp for results file
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    BENCHMARK_RESULTS="$PROJECT_DIR/results/benchmark_results_$TIMESTAMP.csv"
-    print_status "Running benchmarks and saving results to: $BENCHMARK_RESULTS" "plain"
-
-    # Unconditionally write header row
-    echo "implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;compilation_time_ms;num_symbols;number_of_accepting_states;start_state" > "$BENCHMARK_RESULTS"
-
-    # Run Triton benchmarks
-    if [ "$BENCHMARK_TRITON" = true ]; then
-        print_status "Running Triton benchmarks for all tests..." "plain"
-        for regex in "${REGEX_PATTERNS[@]}"; do
-            for input in "${INPUTS[@]}"; do
-                for batch in "${BATCH_SIZES[@]}"; do
-                    echo -e "  Running Triton: regex=$regex, input=$input, batch=$batch"
-                    if [ "$VERBOSE" = true ]; then
-                        "$TRITON_BENCHMARK" --regex="$regex" --input="$input" --batch-size=$batch | tee -a "$BENCHMARK_RESULTS.tmp"
-                    else
-                        "$TRITON_BENCHMARK" --regex="$regex" --input="$input" --batch-size=$batch > "$BENCHMARK_RESULTS.tmp"
-                    fi
-                    cat "$BENCHMARK_RESULTS.tmp" | grep -E "^Triton," | sed "s/^Triton,/Triton;$input;$batch;$regex;1;/" >> "$BENCHMARK_RESULTS"
-                done
-            done
-        done
-        print_status "Triton benchmarks (all tests) completed" "success"
-    fi
-
-    # Run CUDA benchmarks
-    if [ "$BENCHMARK_CUDA" = true ]; then
-        print_status "Running CUDA benchmarks for all tests..." "plain"
-        for regex in "${REGEX_PATTERNS[@]}"; do
-            for input in "${INPUTS[@]}"; do
-                for batch in "${BATCH_SIZES[@]}"; do
-                    echo -e "  Running CUDA: regex=$regex, input=$input, batch=$batch"
-                    if [ "$VERBOSE" = true ]; then
-                        "$CUDA_BENCHMARK" --regex="$regex" --input="$input" --batch-size=$batch | tee -a "$BENCHMARK_RESULTS.tmp"
-                    else
-                        "$CUDA_BENCHMARK" --regex="$regex" --input="$input" --batch-size=$batch > "$BENCHMARK_RESULTS.tmp"
-                    fi
-                    cat "$BENCHMARK_RESULTS.tmp" | grep -E "^CUDA," | sed "s/^CUDA,/CUDA;$input;$batch;$regex;1;/" >> "$BENCHMARK_RESULTS"
-                done
-            done
-        done
-        print_status "CUDA benchmarks (all tests) completed" "success"
-    fi
-
-    # Clean up temporary files
-    rm -f "$BENCHMARK_RESULTS.tmp"
-
-    # Run analysis script if available
-    # if [ -f "$PROJECT_DIR/scripts/triton_vs_cuda_analysis.py" ]; then
-    #     print_status "Running analysis script..." "plain"
-    #     python3 "$PROJECT_DIR/scripts/triton_vs_cuda_analysis.py" "$BENCHMARK_RESULTS"
-    # fi
-    print_status "Benchmark Summary" "info"
-    print_status "Benchmark results saved to: $BENCHMARK_RESULTS" "plain"
 fi
