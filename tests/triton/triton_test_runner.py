@@ -184,11 +184,10 @@ def main():
     parser.add_argument("test_file", nargs="?", default="../tests/cases/test_cases.txt")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--batch-size", "-b", type=int, default=1, help="Batch size for testing")
+    parser.add_argument("--benchmark", action="store_true", help="Run benchmarks after tests and save results to CSV")
+    parser.add_argument("--results-dir", default="../../results", help="Directory to save benchmark results")
     
     args = parser.parse_args()
-    
-    # Rimosso header qui per evitare duplicazione
-    # print_header("Triton Tests")
     
     log_info(f"Test file: {args.test_file}")
     log_info(f"Batch size: {args.batch_size}")
@@ -203,6 +202,76 @@ def main():
              for d in test_dicts]
     
     run_all_tests(tests, args.batch_size, args.verbose)
+    
+    # Run benchmarks if requested
+    if args.benchmark:
+        log_info(f"Running benchmarks and saving results")
+        
+        # Convert relative path to absolute if necessary
+        results_dir = args.results_dir
+        if results_dir.startswith("../") or results_dir.startswith("./"):
+            # Get the absolute path for the results directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            results_dir = os.path.normpath(os.path.join(current_dir, results_dir))
+        
+        # Create results directory if it doesn't exist
+        os.makedirs(results_dir, exist_ok=True)
+        
+        # Generate timestamp for the benchmark file
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        benchmark_file = os.path.join(results_dir, f"triton_benchmark_{timestamp}.csv")
+        
+        log_info(f"Benchmark results will be saved to {benchmark_file}")
+        
+        # Write CSV header
+        with open(benchmark_file, 'w') as f:
+            f.write("implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;"
+                   "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;"
+                   "compilation_time_ms;num_symbols;number_of_accepting_states;start_state\n")
+            
+            # Run benchmark for each test
+            for test in tests:
+                try:
+                    # Measure execution time
+                    start_time = time.time()
+                    
+                    # Run the Triton FSA engine
+                    metrics, output = fsa_triton(
+                        input_strings=test.input,
+                        regex=test.regex,
+                        batch_size=args.batch_size
+                    )
+                    
+                    # Calculate execution time
+                    end_time = time.time()
+                    execution_time_ms = (end_time - start_time) * 1000
+                    
+                    # Get the result (True/False)
+                    result = bool(output[0])
+                    
+                    # Default values for metrics that might not be available
+                    kernel_time_ms = getattr(metrics, 'kernel_time', execution_time_ms)
+                    mem_transfer_time_ms = getattr(metrics, 'memory_transfer_time', 0)
+                    memory_used = getattr(metrics, 'memory_used', 0)
+                    gpu_util = getattr(metrics, 'gpu_utilization', 0)
+                    num_states = getattr(metrics, 'num_states', 3)
+                    compilation_time_ms = getattr(metrics, 'compilation_time', 0)
+                    num_symbols = getattr(metrics, 'num_symbols', 2)
+                    num_accepting_states = getattr(metrics, 'num_accepting_states', 1)
+                    start_state = getattr(metrics, 'start_state', 0)
+                    
+                    # Write the benchmark results to the CSV file
+                    f.write(f"Triton;{test.input};{args.batch_size};{test.regex};{int(result)};"
+                           f"{execution_time_ms};{kernel_time_ms};{mem_transfer_time_ms};"
+                           f"{memory_used};{gpu_util};{num_states};{str(result)};"
+                           f"{compilation_time_ms};{num_symbols};{num_accepting_states};{start_state}\n")
+                    
+                except Exception as e:
+                    if args.verbose:
+                        print(f"  {Colors.RED}Benchmark error for test {test.name}: {e}{Colors.RESET}")
+        
+        log_success(f"Benchmark results saved to: {benchmark_file}")
+    
     return 0
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@
 #include <vector>
 #include <fstream>
 #include <ctime>
+#include <unistd.h>
 
 // ANSI color codes aggiornati per uniformità
 namespace Color {
@@ -83,6 +84,8 @@ int main(int argc, char** argv) {
     std::string testFile = "../../tests/cases/test_cases.txt"; // updated path
     bool verbose = false;
     int batchSize = 1;
+    bool benchmark = false; // nuovo flag benchmark
+    std::string resultsDir = "../../results";
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -95,6 +98,10 @@ int main(int argc, char** argv) {
             }
         } else if (arg.find("--test-file=") == 0) {
             testFile = arg.substr(12);
+        } else if (arg == "--benchmark") {
+            benchmark = true;
+        } else if (arg.find("--results-dir=") == 0) {
+            resultsDir = arg.substr(14);
         } else if (i == 1 && arg[0] != '-') {
             testFile = arg;
         }
@@ -113,6 +120,75 @@ int main(int argc, char** argv) {
     
     // Run all tests 
     runAllTests(tests, batchSize, verbose);
+    
+    // Run benchmarks if requested
+    if (benchmark) {
+        // Generate timestamp for benchmark file
+        auto now = std::chrono::system_clock::now();
+        auto time_now = std::chrono::system_clock::to_time_t(now);
+        std::stringstream timestamp;
+        timestamp << std::put_time(std::localtime(&time_now), "%Y%m%d_%H%M%S");
+        
+        // Create benchmark CSV file with absolute path
+        // Get current working directory for absolute path
+        char currentPath[FILENAME_MAX];
+        if (getcwd(currentPath, sizeof(currentPath)) != NULL) {
+            std::string workingDir(currentPath);
+            // Convert relative path to absolute if necessary
+            if (resultsDir.find("../") == 0 || resultsDir.find("./") == 0) {
+                // Simple path resolution - replace with absolute path
+                resultsDir = workingDir + "/../results";
+            }
+        }
+        
+        std::string benchmarkFile = resultsDir + "/cuda_benchmark_" + timestamp.str() + ".csv";
+        
+        // Ensure directory exists
+        std::string mkdirCmd = "mkdir -p " + resultsDir;
+        system(mkdirCmd.c_str());
+        
+        logInfo("Running benchmarks and saving to " + benchmarkFile);
+        
+        std::ofstream csvFile(benchmarkFile);
+        if (!csvFile.is_open()) {
+            logError("Failed to open benchmark file: " + benchmarkFile);
+            return 1;
+        }
+        
+        // Write CSV header
+        csvFile << "implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;"
+                << "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;"
+                << "compilation_time_ms;num_symbols;number_of_accepting_states;start_state" << std::endl;
+        
+        // Run benchmark for each test
+        for (const auto& test : tests) {
+            try {
+                auto start_time = std::chrono::high_resolution_clock::now();
+                
+                // Run the FSA conversion
+                FSA fsa = CUDAFSAEngine::regexToDFA(test.regex);
+                bool result = CUDAFSAEngine::runSingleTest(test.regex, test.input);
+                
+                auto end_time = std::chrono::high_resolution_clock::now();
+                double execution_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+                
+                // Write benchmark data to CSV
+                csvFile << "CUDA;" << test.input << ";" << batchSize << ";" << test.regex << ";" 
+                        << (result ? "1" : "0") << ";" << execution_time_ms << ";" << execution_time_ms << ";"
+                        << "0;0;0;" << fsa.num_states << ";" << (result ? "True" : "False") << ";"
+                        << "0;" << fsa.alphabet.size() << ";" << fsa.accepting_states.size() << ";"
+                        << fsa.start_state << std::endl;
+                
+            } catch (const std::exception& e) {
+                if (verbose) {
+                    logError("Benchmark failed for test " + test.name + ": " + e.what());
+                }
+            }
+        }
+        
+        csvFile.close();
+        logSuccess("Benchmark results saved to: " + benchmarkFile);
+    }
     
     return 0;
 }

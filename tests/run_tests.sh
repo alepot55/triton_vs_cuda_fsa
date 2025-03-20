@@ -15,7 +15,6 @@ VERBOSE=false    # Default: quiet mode
 LOG_FILE="/tmp/fsa_test_build.log"
 RUN_BENCHMARK=false # Default: don't run benchmarks
 RESULTS_DIR="$PROJECT_DIR/results" # Directory to save benchmark results
-BENCHMARKS_DIR="$SCRIPT_DIR/benchmarks" # Dedicated benchmarks directory in tests folder
 
 # Variables to track test status
 ALL_TESTS_PASSED=true
@@ -171,99 +170,6 @@ run_cmd() {
     return $?
 }
 
-# Function to run benchmarks and save results
-run_benchmarks() {
-    print_header "Running Benchmarks"
-
-    # Create results directory if it doesn't exist
-    mkdir -p "$RESULTS_DIR"
-    
-    # Set timestamp for benchmark files
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    BENCHMARK_RESULTS="$RESULTS_DIR/benchmark_results_${TIMESTAMP}.csv"
-    
-    log_benchmark "Running benchmarks and saving results to: $BENCHMARK_RESULTS"
-    
-    # Add CSV header line
-    echo "implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;compilation_time_ms;num_symbols;number_of_accepting_states;start_state" > "$BENCHMARK_RESULTS"
-    
-    # Ensure benchmarks directory exists
-    mkdir -p "$BENCHMARKS_DIR/cuda"
-    mkdir -p "$BENCHMARKS_DIR/triton"
-    
-    # --- Extended benchmarks using the test file ---
-    TEST_FILE="$SCRIPT_DIR/cases/test_cases.txt"  # Updated path to test cases
-    TRITON_BENCHMARK="$BENCHMARKS_DIR/triton/benchmark_fsa.py"
-    if [ -f "$TRITON_BENCHMARK" ]; then
-        log_benchmark "Running Triton benchmarks for all tests..."
-        if [ "$VERBOSE" = true ]; then
-            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast --verbose >> "$BENCHMARK_RESULTS" &
-            show_spinner $! "Running Triton benchmarks..."
-        else
-            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast >> "$BENCHMARK_RESULTS" &
-            show_spinner $! "Running Triton benchmarks..."
-        fi
-        if [ $? -eq 0 ]; then
-            log_success "Triton benchmarks (all tests) completed successfully"
-        else
-            log_error "Triton benchmarks failed"
-        fi
-    else
-        log_error "Triton benchmark script not found"
-    fi
-    
-    # Fix: Ensure CUDA benchmark is properly compiled and executed
-    CUDA_BENCHMARK="$BENCHMARKS_DIR/cuda/benchmark_fsa"
-    SIMPLE_BENCHMARK_SOURCE="$BENCHMARKS_DIR/cuda/simple_benchmark.cu"
-    TEST_CASE_SOURCE="$SCRIPT_DIR/cases/test_case.cpp"
-    
-    # Always recompile the simple benchmark to ensure latest changes
-    if [ -f "$SIMPLE_BENCHMARK_SOURCE" ]; then
-        log_progress "Compiling CUDA benchmark from source..."
-        # Include test_case.cpp in the compilation and add required include directories
-        (nvcc -I"$PROJECT_DIR" "$SIMPLE_BENCHMARK_SOURCE" "$TEST_CASE_SOURCE" -o "$CUDA_BENCHMARK") &
-        show_spinner $! "Compiling CUDA benchmark..."
-        if [ $? -ne 0 ]; then
-            log_error "Failed to compile CUDA benchmark"
-        else
-            log_success "CUDA benchmark compiled successfully ${ROCKET}"
-        fi
-    else
-        log_error "CUDA benchmark source not found at: ${UNDERLINE}$SIMPLE_BENCHMARK_SOURCE${RESET}"
-    fi
-    
-    if [ -f "$CUDA_BENCHMARK" ]; then
-        log_benchmark "Running CUDA benchmarks for all tests..."
-        if [ "$VERBOSE" = true ]; then
-            # Redirect stderr to the console and stdout to the results file
-            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose 2>&1 1>> "$BENCHMARK_RESULTS") &
-            show_spinner $! "Processing CUDA benchmark results..."
-        else
-            # Only stdout goes to the results file, stderr is discarded
-            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" 1>> "$BENCHMARK_RESULTS" 2>/dev/null) &
-            show_spinner $! "Processing CUDA benchmark results..."
-        fi
-        
-        # Check if any CUDA results were added
-        CUDA_LINES=$(grep -c "^CUDA;" "$BENCHMARK_RESULTS")
-        log_info "Generated ${BOLD}${CUDA_LINES}${RESET} CUDA benchmark entries"
-        
-        if [ "$CUDA_LINES" -gt 0 ]; then
-            log_success "CUDA benchmarks (all tests) completed ${ROCKET}"
-        else
-            log_error "No CUDA benchmark results generated"
-        fi
-    else
-        log_error "CUDA benchmark executable not found at: ${UNDERLINE}$CUDA_BENCHMARK${RESET}"
-    fi
-
-    # Clean up temporary files
-    rm -f "$BENCHMARK_RESULTS.tmp"
-        
-    print_header "Benchmark Summary"
-    log_success "Benchmark results saved to: ${UNDERLINE}$BENCHMARK_RESULTS${RESET}"
-}
-
 # Display a welcome banner - più minimale e elegante
 echo -e "\n${BOLD}${CYAN}FSA Testing Framework${RESET} ${BRIGHT_BLACK}v1.0${RESET}"
 echo -e "${BRIGHT_BLACK}Started at $(date)${RESET}\n"
@@ -339,12 +245,21 @@ if [ "$TEST_CUDA" = true ]; then
         print_header "Running CUDA Tests"
         log_info "Running CUDA tests..."
         
+        # Add benchmark flag if enabled
+        BENCHMARK_ARG=""
+        if [ "$RUN_BENCHMARK" = true ]; then
+            BENCHMARK_ARG="--benchmark"
+            # Create results directory if it doesn't exist
+            mkdir -p "$RESULTS_DIR"
+            log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
+        fi
+        
         # Run with or without verbose flag
         if [ "$VERBOSE" = true ]; then
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" --verbose
+            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" --verbose $BENCHMARK_ARG
             TEST_RESULT=$?
         else
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt"
+            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" $BENCHMARK_ARG
             TEST_RESULT=$?
         fi
         
@@ -385,12 +300,21 @@ if [ "$TEST_TRITON" = true ]; then
         
         log_info "Running Triton tests..."
         
+        # Add benchmark flag if enabled
+        BENCHMARK_ARG=""
+        if [ "$RUN_BENCHMARK" = true ]; then
+            BENCHMARK_ARG="--benchmark"
+            # Create results directory if it doesn't exist
+            mkdir -p "$RESULTS_DIR"
+            log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
+        fi
+        
         # Run Triton tests using the test runner with appropriate verbosity
         if [ "$VERBOSE" = true ]; then
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE" --verbose
+            python "$TRITON_TEST_RUNNER" "$TEST_FILE" --verbose $BENCHMARK_ARG
             TEST_RESULT=$?
         else
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE"
+            python "$TRITON_TEST_RUNNER" "$TEST_FILE" $BENCHMARK_ARG
             TEST_RESULT=$?
         fi
         
@@ -407,16 +331,6 @@ if [ "$TEST_TRITON" = true ]; then
         if [ "$TEST_TRITON" = true ]; then
             ALL_TESTS_PASSED=false
         fi
-    fi
-fi
-
-# Run benchmarks if all tests passed and benchmarks are requested
-if [ "$RUN_BENCHMARK" = true ]; then
-    if [ "$ALL_TESTS_PASSED" = true ]; then
-        run_benchmarks
-    else
-        print_header "Benchmarks Skipped"
-        log_error "Not running benchmarks because some tests failed"
     fi
 fi
 
@@ -451,15 +365,6 @@ if [ "$TEST_TRITON" = true ]; then
         echo -e "  ${CHECK_MARK} ${BOLD}Triton tests${RESET}   ${GREEN}Passed successfully${RESET}"
     else
         echo -e "  ${CROSS_MARK} ${BOLD}Triton tests${RESET}   ${RED}Failed${RESET}"
-    fi
-fi
-
-# Show benchmark status with improved formatting
-if [ "$RUN_BENCHMARK" = true ]; then
-    if [ "$ALL_TESTS_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}Benchmarks${RESET}     ${GREEN}Completed and saved to ${UNDERLINE}${RESULTS_DIR}${RESET}"
-    else
-        echo -e "  ${CROSS_MARK} ${BOLD}Benchmarks${RESET}     ${RED}Skipped due to test failures${RESET}"
     fi
 fi
 
