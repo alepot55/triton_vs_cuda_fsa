@@ -73,21 +73,3 @@ set(CUDA_LIB cuda_fsa)
 add_subdirectory(cuda)
 add_subdirectory(regex)
 
-# Create the fsa_engine_cuda executable (what the original Makefile built)
-file(GLOB COMMON_BENCHMARK_SOURCES "${COMMON_DIR}/benchmark/*.cpp")
-file(GLOB COMMON_TEST_SOURCES "${COMMON_DIR}/test/*.cpp")
-file(GLOB COMMON_SRC_SOURCES "${COMMON_DIR}/src/*.cpp")
-
-add_executable(fsa_engine_cuda 
-    ${COMMON_BENCHMARK_SOURCES}
-    ${COMMON_TEST_SOURCES}
-    ${COMMON_SRC_SOURCES}
-)
-
-target_link_libraries(fsa_engine_cuda PRIVATE 
-    ${CUDA_LIB}
-    common
-    ${CUDA_LIBRARIES}
-    nvidia-ml
-    Threads::Threads
-)
