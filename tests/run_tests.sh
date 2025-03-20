@@ -23,13 +23,98 @@ REGEX_TEST_PASSED=false
 CUDA_TEST_PASSED=false
 TRITON_TEST_PASSED=false
 
-# Minimal color codes
+# Enhanced color and style codes
 RESET="\033[0m"
 BOLD="\033[1m"
+ITALIC="\033[3m"
+UNDERLINE="\033[4m"
+BLACK="\033[30m"
 RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
+BLUE="\033[34m"
+MAGENTA="\033[35m"
 CYAN="\033[36m"
+WHITE="\033[37m"
+BG_BLACK="\033[40m"
+BG_RED="\033[41m"
+BG_GREEN="\033[42m"
+BG_BLUE="\033[44m"
+BRIGHT_BLACK="\033[90m"
+BRIGHT_GREEN="\033[92m"
+BRIGHT_CYAN="\033[96m"
+
+# Symbols for better visualization - minimalista ma elegante
+CHECK_MARK="${GREEN}✓${RESET}"
+CROSS_MARK="${RED}✗${RESET}"
+ARROW_RIGHT="${BLUE}→${RESET}"
+GEAR="${CYAN}⚙${RESET}"
+CLOCK="${YELLOW}⏱${RESET}"
+WARNING="${YELLOW}!${RESET}"
+INFO="${BLUE}i${RESET}"
+ERROR="${RED}✗${RESET}"
+SUCCESS="${GREEN}✓${RESET}"
+ROCKET="${MAGENTA}⟩${RESET}"
+
+# Enhanced helper functions for logging
+timestamp() {
+    echo -e "${BRIGHT_BLACK}[$(date +"%H:%M:%S")]${RESET}"
+}
+
+# Nuovo formato di intestazione più minimal
+print_header() {
+    local title="$1"
+    echo ""
+    echo -e "${BOLD}${CYAN}┌─ ${UNDERLINE}${title}${RESET} ${BOLD}${CYAN}"
+    echo -e "$( printf '─%.0s' $(seq 1 $((60 - ${#title} - 3))) )${RESET}"
+    echo ""
+}
+
+log_info() {
+    echo -e "$(timestamp) ${INFO} ${CYAN}${1}${RESET}"
+}
+
+log_success() {
+    echo -e "$(timestamp) ${SUCCESS} ${GREEN}${1}${RESET}"
+}
+
+log_error() {
+    echo -e "$(timestamp) ${ERROR} ${RED}${1}${RESET}"
+}
+
+log_warning() {
+    echo -e "$(timestamp) ${WARNING} ${YELLOW}${1}${RESET}"
+}
+
+log_progress() {
+    echo -e "$(timestamp) ${GEAR} ${BLUE}${1}${RESET}"
+}
+
+log_benchmark() {
+    echo -e "$(timestamp) ${CLOCK} ${MAGENTA}${1}${RESET}"
+}
+
+show_spinner() {
+    local pid=$1
+    local message=$2
+    local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    echo -ne "$(timestamp) ${GEAR} ${BLUE}${message}${RESET} "
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) % 10 ))
+        echo -ne "\b${YELLOW}${spin:$i:1}${RESET}"
+        sleep 0.1
+    done
+    echo -ne "\b"
+    wait $pid
+    local exit_code=$?
+    if [ $exit_code -eq 0 ]; then
+        echo -e "${CHECK_MARK}"
+    else
+        echo -e "${CROSS_MARK}"
+    fi
+    return $exit_code
+}
 
 for arg in "$@"; do
     case $arg in
@@ -56,35 +141,20 @@ for arg in "$@"; do
             RUN_BENCHMARK=true
             ;;
         --help)
-            echo -e "${CYAN}FSA Test Runner${RESET}"
-            echo -e "${YELLOW}Usage:${RESET} $0 [options]"
-            echo -e "${YELLOW}Options:${RESET}"
-            echo -e "  ${GREEN}--regex-only${RESET}  Only run regex tests"
-            echo -e "  ${GREEN}--cuda${RESET}        Run CUDA tests"
-            echo -e "  ${GREEN}--triton${RESET}      Run Triton tests"
-            echo -e "  ${GREEN}--all${RESET}         Run all tests (regex, CUDA, Triton)"
-            echo -e "  ${GREEN}--verbose${RESET}     Show all build output"
-            echo -e "  ${GREEN}--benchmark${RESET}   Run benchmarks if all tests pass and save results"
-            echo -e "  ${GREEN}--help${RESET}        Display this help message"
+            echo -e "\n${BOLD}${CYAN}FSA Test Runner${RESET}\n"
+            echo -e "${BOLD}${UNDERLINE}Usage:${RESET} $0 [options]\n"
+            echo -e "${BOLD}${UNDERLINE}Options:${RESET}"
+            echo -e "  ${BOLD}${GREEN}--regex-only${RESET}  Only run regex tests"
+            echo -e "  ${BOLD}${GREEN}--cuda${RESET}        Run CUDA tests"
+            echo -e "  ${BOLD}${GREEN}--triton${RESET}      Run Triton tests"
+            echo -e "  ${BOLD}${GREEN}--all${RESET}         Run all tests (regex, CUDA, Triton)"
+            echo -e "  ${BOLD}${GREEN}--verbose${RESET}     Show all build output"
+            echo -e "  ${BOLD}${GREEN}--benchmark${RESET}   Run benchmarks if all tests pass and save results"
+            echo -e "  ${BOLD}${GREEN}--help${RESET}        Display this help message\n"
             exit 0
             ;;
     esac
 done
-
-# Function to print headers
-print_header() {
-    echo -e "\n${CYAN}${BOLD}$1${RESET}"
-    echo -e "-----------------------------------"
-}
-
-# Function to print success/error messages
-print_status() {
-    if [ "$2" = "success" ]; then
-        echo -e "${GREEN}✓ $1${RESET}"
-    else
-        echo -e "${RED}✗ $1${RESET}"
-    fi
-}
 
 # Force clean if requested (silently)
 if [ "$FORCE_CLEAN" = true ]; then
@@ -112,7 +182,7 @@ run_benchmarks() {
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
     BENCHMARK_RESULTS="$RESULTS_DIR/benchmark_results_${TIMESTAMP}.csv"
     
-    echo -e "${YELLOW}Running benchmarks and saving results to:${RESET} $BENCHMARK_RESULTS"
+    log_benchmark "Running benchmarks and saving results to: $BENCHMARK_RESULTS"
     
     # Add CSV header line
     echo "implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;compilation_time_ms;num_symbols;number_of_accepting_states;start_state" > "$BENCHMARK_RESULTS"
@@ -125,15 +195,21 @@ run_benchmarks() {
     TEST_FILE="$PROJECT_DIR/common/test/test_cases.txt"
     TRITON_BENCHMARK="$BENCHMARKS_DIR/triton/benchmark_fsa.py"
     if [ -f "$TRITON_BENCHMARK" ]; then
-        echo -e "${YELLOW}Running Triton benchmarks for all tests...${RESET}"
+        log_benchmark "Running Triton benchmarks for all tests..."
         if [ "$VERBOSE" = true ]; then
-            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast --verbose >> "$BENCHMARK_RESULTS"
+            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast --verbose >> "$BENCHMARK_RESULTS" &
+            show_spinner $! "Running Triton benchmarks..."
         else
-            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast >> "$BENCHMARK_RESULTS"
+            python "$TRITON_BENCHMARK" --test-file="$TEST_FILE" --fast >> "$BENCHMARK_RESULTS" &
+            show_spinner $! "Running Triton benchmarks..."
         fi
-        print_status "Triton benchmarks (all tests) completed" "success"
+        if [ $? -eq 0 ]; then
+            log_success "Triton benchmarks (all tests) completed successfully"
+        else
+            log_error "Triton benchmarks failed"
+        fi
     else
-        print_status "Triton benchmark script not found" "error"
+        log_error "Triton benchmark script not found"
     fi
     
     # Fix: Ensure CUDA benchmark is properly compiled and executed
@@ -142,67 +218,56 @@ run_benchmarks() {
     
     # Always recompile the simple benchmark to ensure latest changes
     if [ -f "$SIMPLE_BENCHMARK_SOURCE" ]; then
-        echo -e "${YELLOW}Compiling CUDA benchmark from source...${RESET}"
-        nvcc "$SIMPLE_BENCHMARK_SOURCE" -o "$CUDA_BENCHMARK"
+        log_progress "Compiling CUDA benchmark from source..."
+        (nvcc "$SIMPLE_BENCHMARK_SOURCE" -o "$CUDA_BENCHMARK") &
+        show_spinner $! "Compiling CUDA benchmark..."
         if [ $? -ne 0 ]; then
-            print_status "Failed to compile CUDA benchmark" "error"
+            log_error "Failed to compile CUDA benchmark"
         else
-            print_status "CUDA benchmark compiled successfully" "success"
+            log_success "CUDA benchmark compiled successfully ${ROCKET}"
         fi
     else
-        print_status "CUDA benchmark source not found at: $SIMPLE_BENCHMARK_SOURCE" "error"
+        log_error "CUDA benchmark source not found at: ${UNDERLINE}$SIMPLE_BENCHMARK_SOURCE${RESET}"
     fi
     
     if [ -f "$CUDA_BENCHMARK" ]; then
-        echo -e "${YELLOW}Running CUDA benchmarks for all tests...${RESET}"
+        log_benchmark "Running CUDA benchmarks for all tests..."
         if [ "$VERBOSE" = true ]; then
-            "$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose | tee -a "$BENCHMARK_RESULTS"
+            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose | tee -a "$BENCHMARK_RESULTS") &
+            show_spinner $! "Processing CUDA benchmark results..."
         else
-            "$CUDA_BENCHMARK" --test-file="$TEST_FILE" >> "$BENCHMARK_RESULTS"
+            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" >> "$BENCHMARK_RESULTS") &
+            show_spinner $! "Processing CUDA benchmark results..."
         fi
         
         # Check if any CUDA results were added
         CUDA_LINES=$(grep -c "^CUDA;" "$BENCHMARK_RESULTS")
-        echo -e "${YELLOW}Generated $CUDA_LINES CUDA benchmark entries${RESET}"
+        log_info "Generated ${BOLD}${CUDA_LINES}${RESET} CUDA benchmark entries"
         
         if [ "$CUDA_LINES" -gt 0 ]; then
-            print_status "CUDA benchmarks (all tests) completed" "success"
+            log_success "CUDA benchmarks (all tests) completed ${ROCKET}"
         else
-            print_status "No CUDA benchmark results generated" "error"
+            log_error "No CUDA benchmark results generated"
         fi
     else
-        print_status "CUDA benchmark executable not found at: $CUDA_BENCHMARK" "error"
+        log_error "CUDA benchmark executable not found at: ${UNDERLINE}$CUDA_BENCHMARK${RESET}"
     fi
 
     # Clean up temporary files
     rm -f "$BENCHMARK_RESULTS.tmp"
-    
-    # Run analysis script if available
-    # if [ -f "$PROJECT_DIR/scripts/triton_vs_cuda_analysis.py" ]; then
-    #     print_header "Running Benchmark Analysis"
-    #     echo -e "${YELLOW}Analyzing benchmark results...${RESET}"
         
-    #     # Run the analysis script with explicit input file path
-    #     python "$PROJECT_DIR/scripts/triton_vs_cuda_analysis.py" --input-file="$BENCHMARK_RESULTS"
-        
-    #     if [ $? -eq 0 ]; then
-    #         print_status "Benchmark analysis completed" "success"
-    #     else
-    #         print_status "Benchmark analysis failed" "error"
-    #     fi
-    # fi
-    
     print_header "Benchmark Summary"
-    echo -e "${GREEN}Benchmark results saved to:${RESET} $BENCHMARK_RESULTS"
+    log_success "Benchmark results saved to: ${UNDERLINE}$BENCHMARK_RESULTS${RESET}"
 }
 
-# Display a minimal welcome banner
-echo -e "${CYAN}FSA Testing Framework${RESET}"
+# Display a welcome banner - più minimale e elegante
+echo -e "\n${BOLD}${CYAN}FSA Testing Framework${RESET} ${BRIGHT_BLACK}v1.0${RESET}"
+echo -e "${BRIGHT_BLACK}Started at $(date)${RESET}\n"
 
 # Only build CUDA implementation if requested
 if [ "$TEST_CUDA" = true ]; then
     print_header "Building CUDA implementation"
-    print_status "CUDA implementation will be built with tests" "success"
+    log_success "CUDA implementation will be built with tests ${ROCKET}"
 fi
 
 # Create and navigate to tests build directory
@@ -213,7 +278,7 @@ cd "$SCRIPT_DIR/build"
 # Remove CMakeCache.txt if it exists
 rm -f CMakeCache.txt
 
-echo -e "${YELLOW}Configuring build...${RESET}"
+log_info "Configuring build..."
 # Build all tests (or just the regex tests if CUDA is disabled)
 if [ "$TEST_CUDA" = true ]; then
     run_cmd cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE=Release -Wno-dev
@@ -223,42 +288,43 @@ else
 fi
 
 if [ $? -ne 0 ]; then
-    print_status "CMake configuration failed" "error"
+    log_error "CMake configuration failed"
     exit 1
 fi
 
-echo -e "${YELLOW}Building...${RESET}"
+log_info "Building..."
 run_cmd make -j4
 if [ $? -ne 0 ]; then
-    print_status "Build failed" "error"
+    log_error "Build failed"
     exit 1
 fi
-print_status "Tests built successfully" "success"
+log_success "Tests built successfully"
 
 # Run regex tests if enabled
 if [ "$TEST_REGEX" = true ]; then
     print_header "Running Regex Tests"
     if [ -f "./regex/test_regex_conversion" ]; then
-        echo -e "${YELLOW}Running...${RESET}"
+        log_info "Running Regex tests..."
         
         if [ "$VERBOSE" = true ]; then
             ./regex/test_regex_conversion "$PROJECT_DIR/common/test/test_cases.txt"
             TEST_RESULT=$?
         else
-            test_output=$(./regex/test_regex_conversion "$PROJECT_DIR/common/test/test_cases.txt" 2>&1)
+            # Modificato per evitare doppi output e messaggi grep
+            test_output=$(./regex/test_regex_conversion "$PROJECT_DIR/common/test/test_cases.txt" 2>/dev/null)
             TEST_RESULT=$?
-            echo "$test_output" | grep -E "passed|Summary|Failed"
+            echo "$test_output" | grep -E "passed|Summary|Failed" 2>/dev/null
         fi
         
         if [ $TEST_RESULT -ne 0 ]; then
-            print_status "Regex tests failed" "error"
+            log_error "Regex tests failed"
             ALL_TESTS_PASSED=false
         else
-            print_status "Regex tests passed" "success"
+            log_success "Regex tests passed"
             REGEX_TEST_PASSED=true
         fi
     else
-        print_status "Regex test executable not found" "error"
+        log_error "Regex test executable not found"
         ALL_TESTS_PASSED=false
     fi
 fi
@@ -267,7 +333,7 @@ fi
 if [ "$TEST_CUDA" = true ]; then
     if [ -f "./cuda/cuda_test_runner" ]; then
         print_header "Running CUDA Tests"
-        echo -e "${YELLOW}Running...${RESET}"
+        log_info "Running CUDA tests..."
         
         # Run with or without verbose flag
         if [ "$VERBOSE" = true ]; then
@@ -280,14 +346,14 @@ if [ "$TEST_CUDA" = true ]; then
         
         # Check if tests were successful by looking for the pass rate
         if [ $TEST_RESULT -eq 0 ]; then
-            print_status "CUDA tests completed successfully" "success"
+            log_success "CUDA tests completed successfully"
             CUDA_TEST_PASSED=true
         else
-            print_status "CUDA tests had failures" "error"
+            log_error "CUDA tests had failures"
             ALL_TESTS_PASSED=false
         fi
     else
-        print_status "CUDA tests not available" "error"
+        log_error "CUDA tests not available"
         if [ "$TEST_CUDA" = true ]; then
             ALL_TESTS_PASSED=false
         fi
@@ -306,14 +372,14 @@ if [ "$TEST_TRITON" = true ]; then
             if command -v conda &> /dev/null; then
                 ENV_NAME=$(grep "name:" "$PROJECT_DIR/environment.yml" | cut -d' ' -f2)
                 if [ -n "$ENV_NAME" ]; then
-                    echo -e "${YELLOW}Activating conda: ${ENV_NAME}${RESET}"
+                    log_info "Activating conda: ${ENV_NAME}"
                     source "$(conda info --base)/etc/profile.d/conda.sh"
                     conda activate "$ENV_NAME" 2>/dev/null
                 fi
             fi
         fi
         
-        echo -e "${YELLOW}Running...${RESET}"
+        log_info "Running Triton tests..."
         
         # Run Triton tests using the test runner with appropriate verbosity
         if [ "$VERBOSE" = true ]; then
@@ -326,14 +392,14 @@ if [ "$TEST_TRITON" = true ]; then
         
         # Check exit code for success/failure
         if [ $TEST_RESULT -eq 0 ]; then
-            print_status "Triton tests completed successfully" "success"
+            log_success "Triton tests completed successfully"
             TRITON_TEST_PASSED=true
         else
-            print_status "Triton tests had failures" "error"
+            log_error "Triton tests had failures"
             ALL_TESTS_PASSED=false
         fi
     else
-        print_status "Triton test runner not found" "error"
+        log_error "Triton test runner not found"
         if [ "$TEST_TRITON" = true ]; then
             ALL_TESTS_PASSED=false
         fi
@@ -346,7 +412,7 @@ if [ "$RUN_BENCHMARK" = true ]; then
         run_benchmarks
     else
         print_header "Benchmarks Skipped"
-        echo -e "${RED}Not running benchmarks because some tests failed${RESET}"
+        log_error "Not running benchmarks because some tests failed"
     fi
 fi
 
@@ -358,37 +424,46 @@ fi
 
 print_header "Tests completed"
 
-# Show which tests were run
-echo -e "${CYAN}Tests run:${RESET}"
+# Show which tests were run with improved formatting
+echo -e "${BOLD}${UNDERLINE}Test Results:${RESET}\n"
 if [ "$TEST_REGEX" = true ]; then
     if [ "$REGEX_TEST_PASSED" = true ]; then
-        echo -e "  ${GREEN}✓${RESET} Regex tests"
+        echo -e "  ${CHECK_MARK} ${BOLD}Regex tests${RESET}    ${GREEN}Passed successfully${RESET}"
     else
-        echo -e "  ${RED}✗${RESET} Regex tests"
+        echo -e "  ${CROSS_MARK} ${BOLD}Regex tests${RESET}    ${RED}Failed${RESET}"
     fi
 fi
 
 if [ "$TEST_CUDA" = true ]; then
     if [ "$CUDA_TEST_PASSED" = true ]; then
-        echo -e "  ${GREEN}✓${RESET} CUDA tests"
+        echo -e "  ${CHECK_MARK} ${BOLD}CUDA tests${RESET}     ${GREEN}Passed successfully${RESET}"
     else
-        echo -e "  ${RED}✗${RESET} CUDA tests"
+        echo -e "  ${CROSS_MARK} ${BOLD}CUDA tests${RESET}     ${RED}Failed${RESET}"
     fi
 fi
 
 if [ "$TEST_TRITON" = true ]; then
     if [ "$TRITON_TEST_PASSED" = true ]; then
-        echo -e "  ${GREEN}✓${RESET} Triton tests"
+        echo -e "  ${CHECK_MARK} ${BOLD}Triton tests${RESET}   ${GREEN}Passed successfully${RESET}"
     else
-        echo -e "  ${RED}✗${RESET} Triton tests"
+        echo -e "  ${CROSS_MARK} ${BOLD}Triton tests${RESET}   ${RED}Failed${RESET}"
     fi
 fi
 
-# Show benchmark status
+# Show benchmark status with improved formatting
 if [ "$RUN_BENCHMARK" = true ]; then
     if [ "$ALL_TESTS_PASSED" = true ]; then
-        echo -e "  ${GREEN}✓${RESET} Benchmarks run and saved to ${RESULTS_DIR}"
+        echo -e "  ${CHECK_MARK} ${BOLD}Benchmarks${RESET}     ${GREEN}Completed and saved to ${UNDERLINE}${RESULTS_DIR}${RESET}"
     else
-        echo -e "  ${RED}✗${RESET} Benchmarks skipped due to test failures"
+        echo -e "  ${CROSS_MARK} ${BOLD}Benchmarks${RESET}     ${RED}Skipped due to test failures${RESET}"
     fi
+fi
+
+echo -e "\n${BRIGHT_BLACK}Completed at $(date)${RESET}"
+
+# Final status message with overall result - migliore e più minimalista
+if [ "$ALL_TESTS_PASSED" = true ]; then
+    echo -e "\n${BOLD}${GREEN}✓ All tests completed successfully!${RESET} ${ROCKET}\n"
+else
+    echo -e "\n${BOLD}${RED}✗ Some tests failed!${RESET} Check the logs for details.\n"
 fi

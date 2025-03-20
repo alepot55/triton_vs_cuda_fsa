@@ -7,15 +7,71 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <ctime>
 
-// ANSI color codes for terminal output
+// ANSI color codes aggiornati per uniformità
 namespace Color {
     const std::string RESET = "\033[0m";
     const std::string BOLD = "\033[1m";
+    const std::string ITALIC = "\033[3m";
+    const std::string UNDERLINE = "\033[4m";
+    const std::string BLACK = "\033[30m";
     const std::string RED = "\033[31m";
     const std::string GREEN = "\033[32m";
     const std::string YELLOW = "\033[33m";
+    const std::string BLUE = "\033[34m";
+    const std::string MAGENTA = "\033[35m";
     const std::string CYAN = "\033[36m";
+    const std::string WHITE = "\033[37m";
+    const std::string BRIGHT_BLACK = "\033[90m";
+    const std::string BRIGHT_GREEN = "\033[92m";
+    const std::string BRIGHT_CYAN = "\033[96m";
+}
+
+// Simboli unificati
+const std::string CHECK_MARK = Color::GREEN + "✓" + Color::RESET;
+const std::string CROSS_MARK = Color::RED + "✗" + Color::RESET;
+const std::string ARROW_RIGHT = Color::BLUE + "→" + Color::RESET;
+const std::string GEAR = Color::CYAN + "⚙" + Color::RESET;
+const std::string INFO = Color::BLUE + "i" + Color::RESET;
+const std::string ERROR_MARK = Color::RED + "✗" + Color::RESET;
+const std::string SUCCESS_MARK = Color::GREEN + "✓" + Color::RESET;
+const std::string CLOCK = Color::YELLOW + "⏱" + Color::RESET;
+
+// Funzioni di stampa nello stile unificato
+void printHeader(const std::string& title) {
+    std::cout << "\n" << Color::BOLD << Color::CYAN << "┌─ " << Color::UNDERLINE << title << Color::RESET << " " 
+              << Color::BOLD << Color::CYAN << Color::RESET << std::endl;
+    
+    std::cout << Color::BOLD << Color::CYAN;
+    for (size_t i = 0; i < 60 - title.length() - 3; ++i) std::cout << "─";
+    std::cout << Color::RESET << "\n" << std::endl;
+}
+
+std::string timestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto time_now = std::chrono::system_clock::to_time_t(now);
+    struct tm timeinfo;
+    #ifdef _WIN32
+        localtime_s(&timeinfo, &time_now);
+    #else
+        localtime_r(&time_now, &timeinfo);
+    #endif
+    char buffer[9];
+    std::strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+    return Color::BRIGHT_BLACK + "[" + std::string(buffer) + "]" + Color::RESET;
+}
+
+void logInfo(const std::string& message) {
+    std::cout << timestamp() << " " << INFO << " " << Color::CYAN << message << Color::RESET << std::endl;
+}
+
+void logSuccess(const std::string& message) {
+    std::cout << timestamp() << " " << SUCCESS_MARK << " " << Color::GREEN << message << Color::RESET << std::endl;
+}
+
+void logError(const std::string& message) {
+    std::cout << timestamp() << " " << ERROR_MARK << " " << Color::RED << message << Color::RESET << std::endl;
 }
 
 // Forward declarations
@@ -44,17 +100,16 @@ int main(int argc, char** argv) {
         }
     }
     
-    std::cout << "CUDA FSA Tests" << std::endl;
-    std::cout << "file: " << testFile << std::endl;
-    std::cout << "batch: " << batchSize << std::endl;
+    logInfo("Test file: " + testFile);
+    logInfo("Batch size: " + std::to_string(batchSize));
     
     std::vector<TestCase> tests;
     if (!loadTestsFromFile(testFile, tests)) {
-        std::cerr << "No tests found" << std::endl;
+        logError("No tests found");
         return 1;
     }
     
-    std::cout << "-----------------------------" << std::endl;
+    logInfo(std::to_string(tests.size()) + " tests to run");
     
     // Run all tests 
     runAllTests(tests, batchSize, verbose);
@@ -105,13 +160,16 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
             std::cout << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cerr << Color::RED << "Error: " << test.name << ": " << e.what() << Color::RESET << std::endl;
+        if (verbose) {
+            std::cout << "  " << Color::RED << "error: " << e.what() << Color::RESET << std::endl << std::endl;
+        } else {
+            logError("Test " + test.name + " failed: " + e.what());
+        }
         test.actual_result = false;
     }
 }
 
 void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
-    std::cout << Color::CYAN << tests.size() << " tests, batch " << batch_size << Color::RESET << std::endl;
     int passed = 0;
     double total_time = 0.0;
     std::vector<std::string> failedTests;
@@ -123,12 +181,21 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
     int total = tests.size();
     int current = 0;
     
+    // Array di caratteri spinner per coerenza con altri runner
+    const char* spinChars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+    int spinIndex = 0;
+    
     for (auto& test : tests) {
         current++;
         
         // Show progress counter in non-verbose mode
         if (!verbose) {
-            std::cout << "\r[" << current << "/" << total << "] " << std::flush;
+            // Aggiornamento stile spinner coerente
+            std::cout << "\r" << timestamp() << " " << GEAR << " " 
+                    << Color::BLUE << "Processing tests " << Color::RESET
+                    << Color::YELLOW << spinChars[spinIndex % 10] << Color::RESET
+                    << " [" << current << "/" << total << "] " << std::flush;
+            spinIndex++;
         }
         
         runTest(test, batch_size, verbose);
@@ -142,7 +209,7 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
     
     // Clear progress line
     if (!verbose) {
-        std::cout << "\r" << std::string(20, ' ') << "\r" << std::flush;
+        std::cout << "\r" << std::string(80, ' ') << "\r" << std::flush;
     }
     
     // Calculate total elapsed time
@@ -151,19 +218,28 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
     double elapsed_ms = elapsed.count() * 1000;
     
     // Print minimal summary
-    std::cout << Color::CYAN << "Summary:" << Color::RESET << std::endl;
     
     double pass_percent = tests.empty() ? 0 : (passed * 100.0 / tests.size());
     std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
+
+    // Minimal test summary
+    if (verbose) {
+        std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
+        std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
+                  << status_color << "(" << std::fixed << std::setprecision(1) 
+                  << pass_percent << "%)" << Color::RESET << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(2) 
+                  << elapsed_ms << "ms\n" << Color::RESET << std::endl;
+    }
     
-    std::cout << "  passed: " << passed << "/" << tests.size() 
-              << " " << status_color << "(" << std::fixed << std::setprecision(1) 
-              << pass_percent << "%)" << Color::RESET << std::endl;
-    std::cout << "  time: " << std::fixed << std::setprecision(2)
-              << total_time << "ms (engine) / " << elapsed_ms << "ms (total)" << std::endl;
-    
-    // Minimal failed test reporting
-    if (!failedTests.empty()) {
+
+    if (failedTests.empty()) {
+        logSuccess("CUDA tests completed successfully");
+        // Ritorna cod. uscita 0 per indicare successo
+    } else {
+        logError("CUDA tests had failures");
+        
+        // Minimal failed test reporting
         std::cout << Color::RED << "\nFailed:" << Color::RESET << std::endl;
         
         for (const auto& test : tests) {
@@ -175,9 +251,11 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
                           << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
                           << Color::RESET << std::endl;
                 std::cout << "    got: " 
-                          << (test.actual_result ? Color::RED + std::string("✓") : Color::GREEN + std::string("✗"))
+                          << (test.actual_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
                           << Color::RESET << std::endl;
             }
         }
+
+        std::cout << "\n";
     }
 }

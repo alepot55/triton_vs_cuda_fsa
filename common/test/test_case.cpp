@@ -69,7 +69,6 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
         tests.push_back(TestCase(current_section, regex, input, expectedVal));
     }
     
-    std::cout << "Loaded " << tests.size() << " test cases from " << filename << std::endl;
     return true;
 }
 

@@ -912,6 +912,8 @@ bool FSAEngine::runDFA(const FSA& fsa, const std::string& input) {
                      currentState) != fsa.accepting_states.end();
 }
 
+// Funzioni di interfaccia C per l'uso della libreria
+
 extern "C" FSA* regex_to_fsa(const char* regex) {
     try {
         FSAEngine engine;
