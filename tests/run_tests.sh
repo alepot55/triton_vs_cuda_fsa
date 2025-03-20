@@ -248,9 +248,10 @@ if [ "$TEST_CUDA" = true ]; then
         # Add benchmark flag if enabled
         BENCHMARK_ARG=""
         if [ "$RUN_BENCHMARK" = true ]; then
-            BENCHMARK_ARG="--benchmark"
             # Create results directory if it doesn't exist
             mkdir -p "$RESULTS_DIR"
+            # Update to pass the results directory explicitly
+            BENCHMARK_ARG="--benchmark --results-dir=$RESULTS_DIR"
             log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
         fi
         
@@ -284,6 +285,39 @@ if [ "$TEST_TRITON" = true ]; then
     print_header "Running Triton Tests"
     TRITON_TEST_RUNNER="$PROJECT_DIR/tests/triton/triton_test_runner.py"
     TEST_FILE="$PROJECT_DIR/tests/cases/test_cases.txt"
+    
+    # Compile the regex_conversion.so library for Triton tests
+    log_info "Compiling regex_conversion shared library..."
+    REGEX_SRC="$PROJECT_DIR/common/src/regex_conversion.cpp"
+    TRITON_OBJ_DIR="$PROJECT_DIR/triton/obj"
+    
+    # Create triton/obj directory if it doesn't exist
+    mkdir -p "$TRITON_OBJ_DIR"
+    
+    # Compile the shared library with additional include paths
+    if [ "$VERBOSE" = true ]; then
+        g++ -shared -o "$TRITON_OBJ_DIR/regex_conversion.so" -fPIC \
+            -I"$PROJECT_DIR/include" \
+            -I"$PROJECT_DIR/common/include" \
+            -I"$PROJECT_DIR" \
+            -I"$PROJECT_DIR/common" \
+            "$REGEX_SRC" -v
+    else
+        g++ -shared -o "$TRITON_OBJ_DIR/regex_conversion.so" -fPIC \
+            -I"$PROJECT_DIR/include" \
+            -I"$PROJECT_DIR/common/include" \
+            -I"$PROJECT_DIR" \
+            -I"$PROJECT_DIR/common" \
+            "$REGEX_SRC" 2>/dev/null
+    fi
+    
+    if [ $? -eq 0 ]; then
+        log_success "Compiled regex_conversion.so successfully"
+    else
+        log_error "Failed to compile regex_conversion.so"
+        ALL_TESTS_PASSED=false
+        TEST_TRITON=false
+    fi
     
     if [ -f "$TRITON_TEST_RUNNER" ]; then
         # Set up Python environment if needed
