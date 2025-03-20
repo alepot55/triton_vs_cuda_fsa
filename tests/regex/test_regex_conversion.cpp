@@ -1,4 +1,5 @@
 #include "../../common/include/fsa_engine.h"
+#include "../../common/test/test_case.h"  // Usa il parser comune in C++
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -17,91 +18,25 @@ namespace Color {
     const std::string CYAN = "\033[36m";
 }
 
-struct TestCase {
-    std::string name;
-    std::string regex;
-    std::string input;
-    bool expected;
-};
-
-std::vector<TestCase> parseTestFile(const std::string& filename) {
-    std::vector<TestCase> tests;
-    std::ifstream file(filename);
-    
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return tests;
-    }
-    
-    TestCase currentTest;
-    std::string line;
-    bool inTest = false;
-    
-    while (std::getline(file, line)) {
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-        
-        // New test section
-        if (line[0] == '[' && line.back() == ']') {
-            // Save previous test if exists
-            if (inTest) {
-                tests.push_back(currentTest);
-            }
-            
-            // Start new test
-            currentTest = TestCase();
-            currentTest.name = line.substr(1, line.size() - 2);
-            inTest = true;
-            continue;
-        }
-        
-        // Parse key-value pairs
-        size_t equalsPos = line.find('=');
-        if (equalsPos != std::string::npos) {
-            std::string key = line.substr(0, equalsPos);
-            std::string value = line.substr(equalsPos + 1);
-            
-            // Trim whitespace
-            key.erase(0, key.find_first_not_of(" \t"));
-            key.erase(key.find_last_not_of(" \t") + 1);
-            value.erase(0, value.find_first_not_of(" \t"));
-            value.erase(value.find_last_not_of(" \t") + 1);
-            
-            if (key == "regex") {
-                currentTest.regex = value;
-            } else if (key == "input") {
-                currentTest.input = value;
-            } else if (key == "expected") {
-                currentTest.expected = (value == "true");
-            }
-        }
-    }
-    
-    // Add the last test if exists
-    if (inTest) {
-        tests.push_back(currentTest);
-    }
-    
-    file.close();
-    return tests;
-}
-
 // Main function for regex conversion test
 int main(int argc, char** argv) {
-    std::string testFile = "../../common/data/tests/extended_tests.txt";
+    std::string testFile = "../../common/test/test_cases.txt"; // updated path
     if (argc > 1) {
         testFile = argv[1];
     }
     
-    std::cout << Color::CYAN << "Regex Conversion Tests" << Color::RESET << std::endl;
+    std::cout << "Regex Conversion Tests" << std::endl;
     std::cout << "file: " << testFile << std::endl;
     
-    std::vector<TestCase> tests = parseTestFile(testFile);
+    std::vector<TestCase> tests;
+    // Usa la funzione comune loadTestsFromFile
+    if (!loadTestsFromFile(testFile, tests)) {
+        std::cerr << "No tests found" << std::endl;
+        return 1;
+    }
     
     if (tests.empty()) {
-        std::cerr << Color::RED << "No tests found" << Color::RESET << std::endl;
+        std::cerr << "No tests found" << std::endl;
         return 1;
     }
     
@@ -131,12 +66,12 @@ int main(int argc, char** argv) {
             FSA dfa = engine.regexToDFA(test.regex);
             result = engine.runDFA(dfa, test.input);
             
-            if (result == test.expected) {
+            if (result == test.expected_result) {
                 passed++;
             } else {
                 failed++;
                 std::string errorMsg = "• " + test.name + 
-                                       " (expected: " + (test.expected ? "✓" : "✗") + 
+                                       " (expected: " + (test.expected_result ? "✓" : "✗") + 
                                        ", got: " + (result ? "✓" : "✗") + ")";
                 failedTests.push_back(errorMsg);
             }

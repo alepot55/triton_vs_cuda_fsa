@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <algorithm>
 
 // Implementazione indipendente dal backend di caricamento del file di test
 bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests) {
@@ -14,7 +15,8 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
     
     std::string line;
     std::string current_section;
-    std::string test_name, regex, input;
+    std::string regex, input;
+    bool expectedVal = true; // default value
     
     while (std::getline(file, line)) {
         // Ignora linee vuote e commenti
@@ -26,14 +28,14 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
         if (line[0] == '[' && line.back() == ']') {
             // Salva il test precedente se esiste
             if (!current_section.empty() && !regex.empty()) {
-                // Set expected value to true for now, will be determined by CPU implementation
-                tests.push_back(TestCase(current_section, regex, input, true)); 
+                tests.push_back(TestCase(current_section, regex, input, expectedVal));
             }
             
             // Inizia nuovo test
             current_section = line.substr(1, line.length() - 2);
             regex = "";
             input = "";
+            expectedVal = true; // reset default for each test
             continue;
         }
         
@@ -53,14 +55,18 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
                 regex = value;
             } else if (key == "input") {
                 input = value;
+            } else if (key == "expected") {
+                // Convert to lowercase for robustness
+                std::string lowerVal = value;
+                std::transform(lowerVal.begin(), lowerVal.end(), lowerVal.begin(), ::tolower);
+                expectedVal = (lowerVal == "true");
             }
-            // Removed "expect" parameter parsing
         }
     }
     
     // Aggiungi l'ultimo test
     if (!current_section.empty() && !regex.empty()) {
-        tests.push_back(TestCase(current_section, regex, input, true)); // Set expected value to true for now
+        tests.push_back(TestCase(current_section, regex, input, expectedVal));
     }
     
     std::cout << "Loaded " << tests.size() << " test cases from " << filename << std::endl;

@@ -122,7 +122,7 @@ run_benchmarks() {
     mkdir -p "$BENCHMARKS_DIR/triton"
     
     # --- Extended benchmarks using the test file ---
-    TEST_FILE="$PROJECT_DIR/common/data/tests/extended_tests.txt"
+    TEST_FILE="$PROJECT_DIR/common/test/test_cases.txt"
     TRITON_BENCHMARK="$BENCHMARKS_DIR/triton/benchmark_fsa.py"
     if [ -f "$TRITON_BENCHMARK" ]; then
         echo -e "${YELLOW}Running Triton benchmarks for all tests...${RESET}"
@@ -242,10 +242,10 @@ if [ "$TEST_REGEX" = true ]; then
         echo -e "${YELLOW}Running...${RESET}"
         
         if [ "$VERBOSE" = true ]; then
-            ./regex/test_regex_conversion "$PROJECT_DIR/common/data/tests/extended_tests.txt"
+            ./regex/test_regex_conversion "$PROJECT_DIR/common/test/test_cases.txt"
             TEST_RESULT=$?
         else
-            test_output=$(./regex/test_regex_conversion "$PROJECT_DIR/common/data/tests/extended_tests.txt" 2>&1)
+            test_output=$(./regex/test_regex_conversion "$PROJECT_DIR/common/test/test_cases.txt" 2>&1)
             TEST_RESULT=$?
             echo "$test_output" | grep -E "passed|Summary|Failed"
         fi
@@ -271,10 +271,10 @@ if [ "$TEST_CUDA" = true ]; then
         
         # Run with or without verbose flag
         if [ "$VERBOSE" = true ]; then
-            ./cuda/cuda_test_runner "$PROJECT_DIR/common/data/tests/extended_tests.txt" --verbose
+            ./cuda/cuda_test_runner "$PROJECT_DIR/common/test/test_cases.txt" --verbose
             TEST_RESULT=$?
         else
-            ./cuda/cuda_test_runner "$PROJECT_DIR/common/data/tests/extended_tests.txt"
+            ./cuda/cuda_test_runner "$PROJECT_DIR/common/test/test_cases.txt"
             TEST_RESULT=$?
         fi
         
@@ -298,7 +298,7 @@ fi
 if [ "$TEST_TRITON" = true ]; then
     print_header "Running Triton Tests"
     TRITON_TEST_RUNNER="$PROJECT_DIR/tests/triton/triton_test_runner.py"
-    TEST_FILE="$PROJECT_DIR/common/data/tests/extended_tests.txt"
+    TEST_FILE="$PROJECT_DIR/common/test/test_cases.txt"
     
     if [ -f "$TRITON_TEST_RUNNER" ]; then
         # Set up Python environment if needed

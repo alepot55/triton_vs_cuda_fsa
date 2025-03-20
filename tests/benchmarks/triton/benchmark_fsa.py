@@ -1,37 +1,18 @@
+import os
+import sys
+# Add the project root to sys.path so the common module is accessible
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../'))
 import numpy as np
 import time
-import sys
-import os
 import argparse
 import gc
+from common.test.parser import parse_test_file  # usa il parser comune
 
 # Se esiste una reale implementazione di fsa_triton, importala;
 # altrimenti, usa questa mock
 def fsa_triton(*args, **kwargs):
     time.sleep(0.001)
     return True
-
-def parse_test_file(filename):
-    tests = []
-    try:
-        with open(filename, 'r') as f:
-            current = {}
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                if line.startswith('[') and line.endswith(']'):
-                    if current.get("regex"):
-                        tests.append(current)
-                    current = {"name": line[1:-1]}
-                elif '=' in line:
-                    key, value = line.split('=', 1)
-                    current[key.strip()] = value.strip()
-            if current.get("regex"):
-                tests.append(current)
-    except Exception as e:
-        print(f"Error parsing test file: {e}")
-    return tests
 
 def run_triton_benchmark_single(input_string="0101", batch_size=1, regex="(0|1)*1", verbose=False):
     if verbose:
@@ -64,7 +45,9 @@ def main():
     parser.add_argument('--batch-size', type=int, default=1, help='Batch size for testing')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--fast', action='store_true', help='Run fewer iterations for testing')
-    parser.add_argument('--test-file', type=str, help='Path to a test file with benchmark cases')
+    # Updated default test file path relative to current location
+    parser.add_argument('--test-file', type=str, default="../../../common/test/test_cases.txt", 
+                        help='Path to a test file with benchmark cases')
     args = parser.parse_args()
     
     if args.test_file:

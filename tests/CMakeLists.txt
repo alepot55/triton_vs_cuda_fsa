@@ -32,6 +32,7 @@ include_directories(
 # Aggiungere il target common (precedentemente in common/CMakeLists.txt)
 add_library(common STATIC
     ${COMMON_DIR}/src/regex_conversion.cpp
+    ${COMMON_DIR}/test/test_case.cpp  # added test_case for test parser
 )
 target_include_directories(common PRIVATE
     ${COMMON_DIR}/include

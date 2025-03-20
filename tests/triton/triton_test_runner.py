@@ -15,6 +15,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'triton', 'src'))
 
 from triton_fsa_engine import fsa_triton
+from common.test.parser import parse_test_file  # nuovo parser comune
 
 # ANSI color codes
 class Colors:
@@ -33,60 +34,6 @@ class TestCase:
         self.expected_result = expected
         self.actual_result = False
         self.metrics = {}
-
-def parse_test_file(filename):
-    """Parse the test file and extract test cases."""
-    tests = []
-    
-    try:
-        with open(filename, 'r') as file:
-            current_section = ""
-            regex = ""
-            input_str = ""
-            expected = True
-            
-            for line in file:
-                line = line.strip()
-                
-                # Skip empty lines and comments
-                if not line or line.startswith('#'):
-                    continue
-                
-                # Check if this is a section header
-                if line.startswith('[') and line.endswith(']'):
-                    # Save previous test if it exists
-                    if current_section and regex:
-                        tests.append(TestCase(current_section, regex, input_str, expected))
-                    
-                    # Start a new test
-                    current_section = line[1:-1]
-                    regex = ""
-                    input_str = ""
-                    expected = True
-                    continue
-                
-                # Parse key-value pairs
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
-                    
-                    if key == "regex":
-                        regex = value
-                    elif key == "input":
-                        input_str = value
-                    elif key == "expected":
-                        expected = (value.lower() == "true")
-            
-            # Add the last test case
-            if current_section and regex:
-                tests.append(TestCase(current_section, regex, input_str, expected))
-    
-    except Exception as e:
-        print(f"{Colors.RED}Error loading test file: {e}{Colors.ENDC}")
-        return []
-    
-    return tests
 
 def run_test(test, batch_size=1, verbose=False):
     """Run a single test case using the Triton FSA engine."""
@@ -186,25 +133,24 @@ def run_all_tests(tests, batch_size=1, verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Run tests for Triton FSA implementation")
-    parser.add_argument("test_file", nargs="?", default="../common/data/tests/extended_tests.txt")
+    parser.add_argument("test_file", nargs="?", default="../common/test/test_cases.txt")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--batch-size", "-b", type=int, default=1, help="Batch size for testing")
     
     args = parser.parse_args()
     
-    # Normalize relative path to be from the script location
-    if args.test_file.startswith("../") or args.test_file.startswith("./"):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        args.test_file = os.path.normpath(os.path.join(script_dir, args.test_file))
-    
     print(f"{Colors.CYAN}Triton FSA Tests{Colors.ENDC}")
     print(f"file: {args.test_file}")
     print(f"batch: {args.batch_size}")
     
-    tests = parse_test_file(args.test_file)
-    if not tests:
+    # Use the common parser; it returns list of dicts.
+    test_dicts = parse_test_file(args.test_file)
+    if not test_dicts:
         print(f"{Colors.RED}No tests found{Colors.ENDC}")
         return 1
+    # Convert dictionaries to TestCase objects
+    tests = [TestCase(d["name"], d.get("regex", ""), d.get("input", ""), (d.get("expected", "true").lower() == "true"))
+             for d in test_dicts]
     
     print("-" * 30)
     
