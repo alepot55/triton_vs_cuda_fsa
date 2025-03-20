@@ -15,7 +15,7 @@ __file_path = os.path.dirname(os.path.abspath(__file__))
 
 
 # Carica la libreria condivisa
-lib = ctypes.CDLL(os.path.join(__file_path, 'regex_conversion.so'))
+lib = ctypes.CDLL(os.path.join(__file_path, '../obj/regex_conversion.so'))
 
 # Definizione della struttura FSAData
 class FSAData(ctypes.Structure):
