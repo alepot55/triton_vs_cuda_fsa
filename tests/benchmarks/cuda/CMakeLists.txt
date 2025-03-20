@@ -19,7 +19,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/benchmark
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cases
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../cuda/src
 )
 
@@ -40,7 +40,7 @@ endif()
 set(COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/benchmark/cmdline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/benchmark/benchmark_metrics.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../common/test/test_case.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/cases/test_case.cpp
 )
 
 # Find the FSA base engine implementation

@@ -15,7 +15,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'triton', 'src'))
 
 from triton_fsa_engine import fsa_triton
-from common.test.parser import parse_test_file  # nuovo parser comune
+from tests.cases.parser import parse_test_file  # Updated parser path
 
 # ANSI color codes aggiornati per il nuovo stile minimale
 class Colors:
@@ -173,7 +173,7 @@ def run_all_tests(tests, batch_size=1, verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Run tests for Triton FSA implementation")
-    parser.add_argument("test_file", nargs="?", default="../common/test/test_cases.txt")
+    parser.add_argument("test_file", nargs="?", default="../tests/cases/test_cases.txt")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--batch-size", "-b", type=int, default=1, help="Batch size for testing")
     

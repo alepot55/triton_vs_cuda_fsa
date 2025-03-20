@@ -2,8 +2,8 @@
 
 #include <string>
 #include <vector>
-#include "../benchmark/benchmark_metrics.h"
-#include "../include/fsa_definition.h"
+#include "../../common/benchmark/benchmark_metrics.h"
+#include "../../common/include/fsa_definition.h"
 
 // Forward declarations for CUDA-specific types
 struct CUDAFSA;

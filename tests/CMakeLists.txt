@@ -32,11 +32,11 @@ include_directories(
 # Aggiungere il target common (precedentemente in common/CMakeLists.txt)
 add_library(common STATIC
     ${COMMON_DIR}/src/regex_conversion.cpp
-    ${COMMON_DIR}/test/test_case.cpp  # added test_case for test parser
+    ${CMAKE_CURRENT_SOURCE_DIR}/cases/test_case.cpp  # Updated path to test_case.cpp
 )
 target_include_directories(common PRIVATE
     ${COMMON_DIR}/include
-    ${COMMON_DIR}/test
+    ${CMAKE_CURRENT_SOURCE_DIR}/cases  # Updated include path
 )
 target_compile_options(common PRIVATE -Wall -Wextra)
 option(DEBUG_FSA "Enable debug output for FSA engine" OFF)

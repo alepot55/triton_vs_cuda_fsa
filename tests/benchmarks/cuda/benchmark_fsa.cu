@@ -8,7 +8,7 @@
 #include <nvml.h>
 
 #include "../../../common/benchmark/benchmark_metrics.h"
-#include "../../../common/test/test_case.h"
+#include "../../../tests/cases/test_case.h"
 #include "../../../common/benchmark/cmdline.h"
 #include "../../../cuda/src/cuda_fsa_engine.h"
 #include "../../../common/include/fsa_definition.h"

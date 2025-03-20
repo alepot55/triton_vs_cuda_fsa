@@ -46,7 +46,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--fast', action='store_true', help='Run fewer iterations for testing')
     # Updated default test file path relative to current location
-    parser.add_argument('--test-file', type=str, default="../../../common/test/test_cases.txt", 
+    parser.add_argument('--test-file', type=str, default="../../../tests/cases/test_cases.txt", 
                         help='Path to a test file with benchmark cases')
     args = parser.parse_args()
     

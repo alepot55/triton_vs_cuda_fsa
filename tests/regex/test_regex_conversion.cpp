@@ -1,5 +1,5 @@
 #include "../../common/include/fsa_engine.h"
-#include "../../common/test/test_case.h"  // Usa il parser comune in C++
+#include "../cases/test_case.h"  // Updated path to test_case.h
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -76,7 +76,7 @@ void logError(const std::string& message) {
 
 // Main function for regex conversion test
 int main(int argc, char** argv) {
-    std::string testFile = "../../common/test/test_cases.txt"; // updated path
+    std::string testFile = "../../tests/cases/test_cases.txt"; // updated path
     if (argc > 1) {
         testFile = argv[1];
     }

@@ -1,4 +1,4 @@
-#include "../../common/test/test_case.h"  // include il parser comune
+#include "../cases/test_case.h"  // Updated path to use cases directory
 #include "../../cuda/src/cuda_fsa_engine.h"
 #include "../../common/include/fsa_definition.h"
 #include <iostream>
@@ -80,7 +80,7 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose);
 
 // Main function for the CUDA test runner
 int main(int argc, char** argv) {
-    std::string testFile = "../../common/test/test_cases.txt"; // updated path
+    std::string testFile = "../../tests/cases/test_cases.txt"; // updated path
     bool verbose = false;
     int batchSize = 1;
     

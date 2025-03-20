@@ -330,5 +330,3 @@ expected = true
 regex = ((0|1)+)?(1{2,3}(0*))
 input = 11000
 expected = true
-
-
