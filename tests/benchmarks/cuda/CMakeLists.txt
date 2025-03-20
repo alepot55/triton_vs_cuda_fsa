@@ -66,60 +66,21 @@ set(CUDA_ENGINE_SOURCES
     ${FSA_ENGINE_SOURCE}
 )
 
-# Create a simplified benchmark if the FSA engine isn't found
+# Error out if the FSA engine isn't found
 if("${FSA_ENGINE_SOURCE}" STREQUAL "")
-    message(STATUS "FSA engine source not found, creating simplified benchmark")
-    
-    # Create a simplified benchmark that doesn't depend on FSA engine
-    file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/simple_benchmark.cu 
-    "#include <iostream>
-    #include <vector>
-    #include <string>
-    #include <chrono>
-    #include <cuda_runtime.h>
-    #include <fstream>
-    #include <iomanip>
+    message(FATAL_ERROR "FSA engine source not found. Build cannot continue.")
+endif()
 
-    int main(int argc, char* argv[]) {
-        std::string regex = \"(0|1)*1\";
-        std::string input = \"0101\";
-        int batch_size = 1;
-        
-        for (int i = 1; i < argc; i++) {
-            std::string arg = argv[i];
-            if (arg.find(\"--regex=\") == 0) regex = arg.substr(8);
-            else if (arg.find(\"--input=\") == 0) input = arg.substr(8);
-            else if (arg.find(\"--batch-size=\") == 0) batch_size = std::stoi(arg.substr(13));
-        }
-        
-        auto start = std::chrono::high_resolution_clock::now();
-        auto end = std::chrono::high_resolution_clock::now();
-        double execution_time_ms = std::chrono::duration<double, std::milli>(end - start).count();
-        
-        // Output in CSV format for parsing
-        std::cout << \"CUDA,\" << input << \",\" << batch_size << \",\" << regex << \",\"
-                  << execution_time_ms << \",\" << execution_time_ms << \",0,0,0,\"
-                  << \"3,True,,0,2,1,0\" << std::endl;
-        
-        return 0;
-    }")
+# Build the benchmark executable
+add_executable(benchmark_fsa 
+    ${COMMON_SOURCES}
+    ${CUDA_ENGINE_SOURCES}
+)
 
-    # Build the simplified benchmark instead
-    add_executable(benchmark_fsa ${CMAKE_CURRENT_SOURCE_DIR}/simple_benchmark.cu)
-    target_link_libraries(benchmark_fsa ${CUDA_LIBRARIES})
-else()
-    # Build the full benchmark executable
-    add_executable(benchmark_fsa 
-        ${CMAKE_CURRENT_SOURCE_DIR}/benchmark_fsa.cu
-        ${COMMON_SOURCES}
-        ${CUDA_ENGINE_SOURCES}
-    )
-
-    # Link libraries
-    target_link_libraries(benchmark_fsa ${CUDA_LIBRARIES})
-    if(NVML_LIBRARY)
-        target_link_libraries(benchmark_fsa ${NVML_LIBRARY})
-    endif()
+# Link libraries
+target_link_libraries(benchmark_fsa ${CUDA_LIBRARIES})
+if(NVML_LIBRARY)
+    target_link_libraries(benchmark_fsa ${NVML_LIBRARY})
 endif()
 
 # Copy the executable to the benchmarks directory

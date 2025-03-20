@@ -157,10 +157,12 @@ int main(int argc, char** argv) {
     double pass_percent = (tests.size() > 0) ? (passed * 100.0 / tests.size()) : 0;
     std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
     
-    std::cout << "  passed: " << passed << "/" << tests.size() 
-              << " " << status_color << "(" << std::fixed << std::setprecision(1) 
+    std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
+    std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
+              << status_color << "(" << std::fixed << std::setprecision(1) 
               << pass_percent << "%)" << Color::RESET << std::endl;
-    std::cout << "  time: " << duration.count() << "ms" << std::endl;
+    std::cout << "  Time: " << std::fixed << std::setprecision(2) 
+              << duration.count() << "ms\n" << Color::RESET << std::endl;
     
     // Minimal failed test reporting
     if (!failedTests.empty()) {

@@ -27,7 +27,7 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
         // Nuova sezione/test
         if (line[0] == '[' && line.back() == ']') {
             // Salva il test precedente se esiste
-            if (!current_section.empty() && !regex.empty()) {
+            if (!current_section.empty()) { // updated condition
                 tests.push_back(TestCase(current_section, regex, input, expectedVal));
             }
             
@@ -65,7 +65,7 @@ bool loadTestsFromFile(const std::string& filename, std::vector<TestCase>& tests
     }
     
     // Aggiungi l'ultimo test
-    if (!current_section.empty() && !regex.empty()) {
+    if (!current_section.empty()) { // updated condition
         tests.push_back(TestCase(current_section, regex, input, expectedVal));
     }
     

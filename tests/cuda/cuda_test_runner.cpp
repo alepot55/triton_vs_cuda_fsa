@@ -120,12 +120,12 @@ int main(int argc, char** argv) {
 // Implementation for runTest
 void runTest(TestCase& test, int batch_size, bool verbose) {
     if (verbose) {
-        std::cout << Color::CYAN << "• " << test.name << Color::RESET << std::endl;
-        std::cout << "  regex: " << test.regex << std::endl;
-        std::cout << "  input: '" << test.input << "'" << std::endl;
-        std::cout << "  expect: " 
-                  << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
-                  << Color::RESET << std::endl;
+        // Compact test info on a single line
+        std::cout << Color::CYAN << "• " << test.name << Color::RESET 
+                  << " | regex: " << test.regex 
+                  << " | input: '" << test.input << "'"
+                  << " | expect: " << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗")) + Color::RESET
+                  << std::endl;
     }
     try {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -152,12 +152,11 @@ void runTest(TestCase& test, int batch_size, bool verbose) {
             std::string status_color = passed ? Color::GREEN : Color::RED;
             std::string result_color = test.actual_result ? Color::GREEN : Color::RED;
             
-            std::cout << "  result: " 
-                      << result_color << (test.actual_result ? "✓" : "✗") << Color::RESET
-                      << " [" << status_color << status << Color::RESET << "]" << std::endl;
-            std::cout << "  time: " << std::fixed << std::setprecision(2)
-                      << test.metrics.execution_time_ms << "ms" << std::endl;
-            std::cout << std::endl;
+            // Print result on a single line
+            std::cout << "  result: " << result_color << (test.actual_result ? "✓" : "✗") << Color::RESET
+                    << " | status: " << status_color << status << Color::RESET
+                    << " | time: " << std::fixed << std::setprecision(2) << test.metrics.execution_time_ms << "ms"
+                    << std::endl;
         }
     } catch (const std::exception& e) {
         if (verbose) {
@@ -223,15 +222,12 @@ void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
     std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
 
     // Minimal test summary
-    if (verbose) {
-        std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
-        std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
-                  << status_color << "(" << std::fixed << std::setprecision(1) 
-                  << pass_percent << "%)" << Color::RESET << std::endl;
-        std::cout << "  Time: " << std::fixed << std::setprecision(2) 
-                  << elapsed_ms << "ms\n" << Color::RESET << std::endl;
-    }
-    
+    std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
+    std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
+                << status_color << "(" << std::fixed << std::setprecision(1) 
+                << pass_percent << "%)" << Color::RESET << std::endl;
+    std::cout << "  Time: " << std::fixed << std::setprecision(2) 
+                << elapsed_ms << "ms\n" << Color::RESET << std::endl;   
 
     if (failedTests.empty()) {
         logSuccess("CUDA tests completed successfully");

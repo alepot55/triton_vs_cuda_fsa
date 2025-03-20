@@ -73,12 +73,13 @@ def log_error(message):
 def run_test(test, batch_size=1, verbose=False):
     """Run a single test case using the Triton FSA engine."""
     if verbose:
-        print(f"{Colors.CYAN}• {test.name}{Colors.RESET}")
-        print(f"  regex: {test.regex}")
-        print(f"  input: '{test.input}'")
-        print(f"  expect: {Colors.GREEN if test.expected_result else Colors.RED}{'✓' if test.expected_result else '✗'}{Colors.RESET}")
+        # Compact test info on a single line
+        print(f"{Colors.CYAN}• {test.name}{Colors.RESET} | regex: {test.regex} | input: '{test.input}' | expect: {Colors.GREEN if test.expected_result else Colors.RED}{'✓' if test.expected_result else '✗'}{Colors.RESET}")
     
     try:
+        # Measure execution time
+        start_time = time.time()
+        
         # Run the Triton FSA engine
         metrics, output = fsa_triton(
             input_strings=test.input,
@@ -86,18 +87,26 @@ def run_test(test, batch_size=1, verbose=False):
             batch_size=batch_size
         )
         
+        # Calculate execution time
+        end_time = time.time()
+        execution_time_ms = (end_time - start_time) * 1000
+        
         # Save metrics and result
         test.actual_result = bool(output[0])
         test.metrics = metrics
         
-        if verbose:
-            status = "✓" if test.actual_result == test.expected_result else "✗"
-            status_color = Colors.GREEN if status == "✓" else Colors.RED
-            print(f"  result: {Colors.GREEN if test.actual_result else Colors.RED}{'✓' if test.actual_result else '✗'}{Colors.RESET} [{status_color}{status}{Colors.RESET}]")
-            if hasattr(metrics, 'execution_time'):
-                print(f"  time: {metrics.execution_time:.2f}ms")
-            print()
+        # Store execution time in metrics if not already present
+        if not hasattr(metrics, 'execution_time'):
+            metrics.execution_time = execution_time_ms
         
+        if verbose:
+            passed = test.actual_result == test.expected_result
+            status = "✓" if passed else "✗"
+            status_color = Colors.GREEN if passed else Colors.RED
+            result_color = Colors.GREEN if test.actual_result else Colors.RED
+            
+            # Print result on a single line
+            print(f"  result: {result_color}{'✓' if test.actual_result else '✗'}{Colors.RESET} | status: {status_color}{status}{Colors.RESET} | time: {metrics.execution_time:.2f}ms")
         return test.actual_result == test.expected_result
     
     except Exception as e:
@@ -149,14 +158,13 @@ def run_all_tests(tests, batch_size=1, verbose=False):
     elapsed_time = time.time() - start_time
     
     # Print summary with minimal formatting
-    if verbose:
-        print(f"\n{Colors.BOLD}Test Summary:{Colors.RESET}")
-        
-        pass_rate = passed * 100.0 / len(tests) if tests else 0
-        status_color = Colors.GREEN if pass_rate == 100 else Colors.RED if pass_rate < 50 else Colors.YELLOW
-        
-        print(f"  passed: {passed}/{len(tests)} {status_color}({pass_rate:.1f}%){Colors.RESET}")
-        print(f"  time: {total_time:.2f}ms (engine) / {elapsed_time*1000:.2f}ms (total)")
+    print(f"\n{Colors.BOLD}Test Summary:{Colors.RESET}")
+    
+    pass_rate = passed * 100.0 / len(tests) if tests else 0
+    status_color = Colors.GREEN if pass_rate == 100 else Colors.RED if pass_rate < 50 else Colors.YELLOW
+    
+    print(f"  passed: {passed}/{len(tests)} {status_color}({pass_rate:.1f}%){Colors.RESET}")
+    print(f"  time: {total_time:.2f}ms (engine) / {elapsed_time*1000:.2f}ms (total)\n")
     
     # Show failed tests if any
     if failed_tests:

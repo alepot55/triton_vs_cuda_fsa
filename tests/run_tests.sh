@@ -215,11 +215,13 @@ run_benchmarks() {
     # Fix: Ensure CUDA benchmark is properly compiled and executed
     CUDA_BENCHMARK="$BENCHMARKS_DIR/cuda/benchmark_fsa"
     SIMPLE_BENCHMARK_SOURCE="$BENCHMARKS_DIR/cuda/simple_benchmark.cu"
+    TEST_CASE_SOURCE="$SCRIPT_DIR/cases/test_case.cpp"
     
     # Always recompile the simple benchmark to ensure latest changes
     if [ -f "$SIMPLE_BENCHMARK_SOURCE" ]; then
         log_progress "Compiling CUDA benchmark from source..."
-        (nvcc "$SIMPLE_BENCHMARK_SOURCE" -o "$CUDA_BENCHMARK") &
+        # Include test_case.cpp in the compilation and add required include directories
+        (nvcc -I"$PROJECT_DIR" "$SIMPLE_BENCHMARK_SOURCE" "$TEST_CASE_SOURCE" -o "$CUDA_BENCHMARK") &
         show_spinner $! "Compiling CUDA benchmark..."
         if [ $? -ne 0 ]; then
             log_error "Failed to compile CUDA benchmark"
@@ -233,10 +235,12 @@ run_benchmarks() {
     if [ -f "$CUDA_BENCHMARK" ]; then
         log_benchmark "Running CUDA benchmarks for all tests..."
         if [ "$VERBOSE" = true ]; then
-            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose | tee -a "$BENCHMARK_RESULTS") &
+            # Redirect stderr to the console and stdout to the results file
+            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" --verbose 2>&1 1>> "$BENCHMARK_RESULTS") &
             show_spinner $! "Processing CUDA benchmark results..."
         else
-            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" >> "$BENCHMARK_RESULTS") &
+            # Only stdout goes to the results file, stderr is discarded
+            ("$CUDA_BENCHMARK" --test-file="$TEST_FILE" 1>> "$BENCHMARK_RESULTS" 2>/dev/null) &
             show_spinner $! "Processing CUDA benchmark results..."
         fi
         

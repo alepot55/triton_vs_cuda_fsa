@@ -12,13 +12,13 @@ def parse_test_file(filename):
                 if not line or line.startswith('#'):
                     continue
                 if line.startswith('[') and line.endswith(']'):
-                    if current.get("regex"):
+                    if "regex" in current:
                         tests.append(current)
                     current = {"name": line[1:-1]}
                 elif '=' in line:
                     key, value = line.split('=', 1)
                     current[key.strip()] = value.strip()
-            if current.get("regex"):
+            if "regex" in current:
                 tests.append(current)
     except Exception as e:
         print(f"Error parsing test file: {e}")

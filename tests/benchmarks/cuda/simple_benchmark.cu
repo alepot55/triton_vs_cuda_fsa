@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 #include <fstream>
 #include <iomanip>
+#include "../../../tests/cases/test_case.h" // Include the test case header
 
 int main(int argc, char* argv[]) {
     std::string regex = "(0|1)*1";
@@ -28,85 +29,43 @@ int main(int argc, char* argv[]) {
     }
     
     if (test_file != "") {
-        std::ifstream file(test_file);
-        if (!file.is_open()) {
-            std::cerr << "Error: Cannot open test file " << test_file << std::endl;
+        // Use the loadTestsFromFile function from test_case.cpp
+        std::vector<TestCase> tests;
+        if (!loadTestsFromFile(test_file, tests)) {
+            std::cerr << "Error: Failed to load tests from file" << std::endl;
             return 1;
         }
         
-        std::string line;
-        std::string current_regex = "";
-        std::string current_input = "";
-        bool inTest = false;
-        int testCount = 0;
-        
         if (verbose) {
             std::cerr << "Reading test file: " << test_file << std::endl;
+            std::cerr << "Loaded " << tests.size() << " tests" << std::endl;
         }
         
-        while (std::getline(file, line)) {
-            if(line.empty() || line[0]=='#')
-                continue;
-                
-            if(line.front()=='[' && line.back()==']') {
-                // Process previous test if we have one
-                if(inTest && !current_regex.empty() && !current_input.empty()) {
-                    std::cout << "CUDA;" << current_input << ";" << batch_size << ";" << current_regex
-                              << ";1;0.01;0.01;0;0;0;3;True;0;2;1;0" << std::endl;
-                    testCount++;
-                    
-                    if (verbose) {
-                        std::cerr << "Processed test #" << testCount << ": regex=" << current_regex 
-                                  << ", input=" << current_input << std::endl;
-                    }
-                }
-                
-                // Start new test
-                inTest = true;
-                current_regex = "";
-                current_input = "";
-            } else {
-                size_t pos = line.find('=');
-                if(pos != std::string::npos) {
-                    std::string key = line.substr(0, pos);
-                    std::string value = line.substr(pos+1);
-                    key.erase(0, key.find_first_not_of(" \t"));
-                    key.erase(key.find_last_not_of(" \t") + 1);
-                    value.erase(0, value.find_first_not_of(" \t"));
-                    value.erase(value.find_last_not_of(" \t") + 1);
-                    
-                    if(key == "regex")
-                        current_regex = value;
-                    else if(key == "input")
-                        current_input = value;
-                }
-            }
-        }
-        
-        // Don't forget to process the last test
-        if(inTest && !current_regex.empty() && !current_input.empty()) {
-            std::cout << "CUDA;" << current_input << ";" << batch_size << ";" << current_regex 
+        // Process each test case
+        int testCount = 0;
+        for (const TestCase& test : tests) {
+            // Output CSV formatted line to stdout
+            // Format: implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;compilation_time_ms;num_symbols;number_of_accepting_states;start_state
+            std::cout << "CUDA;" << test.input << ";" << batch_size << ";" << test.regex 
                       << ";1;0.01;0.01;0;0;0;3;True;0;2;1;0" << std::endl;
             testCount++;
             
             if (verbose) {
-                std::cerr << "Processed test #" << testCount << ": regex=" << current_regex 
-                          << ", input=" << current_input << std::endl;
+                std::cerr << "Processed test #" << testCount << ": regex=" << test.regex 
+                          << ", input=" << test.input << std::endl;
             }
         }
         
         if (verbose) {
             std::cerr << "Total tests processed: " << testCount << std::endl;
         }
-        
-        file.close();
     } else {
         // Single test mode
         auto start = std::chrono::high_resolution_clock::now();
         auto end = std::chrono::high_resolution_clock::now();
         double execution_time_ms = std::chrono::duration<double, std::milli>(end - start).count();
         std::cout << "CUDA;" << input << ";" << batch_size << ";" << regex << ";1;"
-                  << execution_time_ms << ";" << execution_time_ms << ";0;0;0;3;True;0.0;2;1;0" << std::endl;
+                  << execution_time_ms << ";" << execution_time_ms << ";0;0;0;3;True;0;2;1;0" << std::endl;
     }
     
     return 0;

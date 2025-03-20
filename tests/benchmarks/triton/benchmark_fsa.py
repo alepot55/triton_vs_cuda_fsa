@@ -6,7 +6,7 @@ import numpy as np
 import time
 import argparse
 import gc
-from common.test.parser import parse_test_file  # usa il parser comune
+from tests.cases.parser import parse_test_file  # usa il parser comune
 
 # Se esiste una reale implementazione di fsa_triton, importala;
 # altrimenti, usa questa mock
@@ -15,8 +15,6 @@ def fsa_triton(*args, **kwargs):
     return True
 
 def run_triton_benchmark_single(input_string="0101", batch_size=1, regex="(0|1)*1", verbose=False):
-    if verbose:
-        print(f"Running Triton benchmark with regex: {regex}, input: {input_string}, batch: {batch_size}")
     fsa_num_states = 2
     fsa_num_symbols = 2
     fsa_start_state = 0
