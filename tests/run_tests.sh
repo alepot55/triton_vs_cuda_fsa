@@ -15,12 +15,15 @@ VERBOSE=false    # Default: quiet mode
 LOG_FILE="/tmp/fsa_test_build.log"
 RUN_BENCHMARK=false # Default: don't run benchmarks
 RESULTS_DIR="$PROJECT_DIR/results" # Directory to save benchmark results
+TEST_MATRIX=false  # Default: don't test matrix operations
 
 # Variables to track test status
 ALL_TESTS_PASSED=true
 REGEX_TEST_PASSED=false
 CUDA_TEST_PASSED=false
 TRITON_TEST_PASSED=false
+MATRIX_CUDA_TEST_PASSED=false
+MATRIX_TRITON_TEST_PASSED=false
 
 # Enhanced color and style codes
 RESET="\033[0m"
@@ -121,6 +124,7 @@ for arg in "$@"; do
             TEST_REGEX=true
             TEST_CUDA=false
             TEST_TRITON=false
+            TEST_MATRIX=false
             ;;
         --cuda)
             TEST_CUDA=true
@@ -128,10 +132,14 @@ for arg in "$@"; do
         --triton)
             TEST_TRITON=true
             ;;
+        --matrix)
+            TEST_MATRIX=true
+            ;;
         --all)
             TEST_REGEX=true
             TEST_CUDA=true
             TEST_TRITON=true
+            TEST_MATRIX=true
             ;;
         --verbose)
             VERBOSE=true
@@ -146,7 +154,8 @@ for arg in "$@"; do
             echo -e "  ${BOLD}${GREEN}--regex-only${RESET}  Only run regex tests"
             echo -e "  ${BOLD}${GREEN}--cuda${RESET}        Run CUDA tests"
             echo -e "  ${BOLD}${GREEN}--triton${RESET}      Run Triton tests"
-            echo -e "  ${BOLD}${GREEN}--all${RESET}         Run all tests (regex, CUDA, Triton)"
+            echo -e "  ${BOLD}${GREEN}--matrix${RESET}      Run matrix operation tests"
+            echo -e "  ${BOLD}${GREEN}--all${RESET}         Run all tests (regex, CUDA, Triton, matrix)"
             echo -e "  ${BOLD}${GREEN}--verbose${RESET}     Show all build output"
             echo -e "  ${BOLD}${GREEN}--benchmark${RESET}   Run benchmarks if all tests pass and save results"
             echo -e "  ${BOLD}${GREEN}--help${RESET}        Display this help message\n"
@@ -368,6 +377,114 @@ if [ "$TEST_TRITON" = true ]; then
     fi
 fi
 
+# Run matrix operation tests if enabled
+if [ "$TEST_MATRIX" = true ]; then
+    print_header "Running Matrix Operation Tests"
+    
+    # First check if we can run CUDA matrix tests
+    if [ -d "./matrix" ]; then
+        # Compile CUDA matrix test runner if it doesn't exist
+        if [ ! -f "./matrix/cuda_matrix_test_runner" ]; then
+            log_info "Compiling CUDA matrix test runner..."
+            
+            # Create build directory for matrix tests if it doesn't exist
+            mkdir -p "$SCRIPT_DIR/build/matrix"
+            cd "$SCRIPT_DIR/build/matrix"
+            
+            # Run cmake for the matrix tests
+            if [ "$VERBOSE" = true ]; then
+                cmake "$SCRIPT_DIR/matrix" -DCMAKE_BUILD_TYPE=Release -Wno-dev
+                make -j4
+            else
+                cmake "$SCRIPT_DIR/matrix" -DCMAKE_BUILD_TYPE=Release -Wno-dev >> "$LOG_FILE" 2>&1
+                make -j4 >> "$LOG_FILE" 2>&1
+            fi
+            
+            # Check if compilation was successful
+            if [ $? -ne 0 ]; then
+                log_error "Failed to compile CUDA matrix test runner"
+                ALL_TESTS_PASSED=false
+            else
+                log_success "CUDA matrix test runner compiled successfully"
+            fi
+            
+            # Go back to the build directory
+            cd "$SCRIPT_DIR/build"
+        fi
+        
+        # Run CUDA matrix tests
+        log_info "Running CUDA matrix tests..."
+        
+        # Add benchmark flag if enabled
+        BENCHMARK_ARG=""
+        if [ "$RUN_BENCHMARK" = true ]; then
+            # Create results directory if it doesn't exist
+            mkdir -p "$RESULTS_DIR"
+            BENCHMARK_ARG="--results-dir=$RESULTS_DIR"
+        fi
+        
+        # Run the tests
+        if [ "$VERBOSE" = true ]; then
+            ./matrix/cuda_matrix_test_runner $BENCHMARK_ARG
+            CUDA_MATRIX_RESULT=$?
+        else
+            ./matrix/cuda_matrix_test_runner $BENCHMARK_ARG > /tmp/cuda_matrix_output.log 2>&1
+            CUDA_MATRIX_RESULT=$?
+            cat /tmp/cuda_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
+        fi
+        
+        # Check if tests were successful
+        if [ $CUDA_MATRIX_RESULT -eq 0 ]; then
+            log_success "CUDA matrix tests completed successfully"
+            MATRIX_CUDA_TEST_PASSED=true
+        else
+            log_error "CUDA matrix tests had failures"
+            ALL_TESTS_PASSED=false
+        fi
+    else
+        log_error "CUDA matrix tests not available"
+        ALL_TESTS_PASSED=false
+    fi
+    
+    # Check if we can run Triton matrix tests
+    TRITON_MATRIX_TEST_RUNNER="$PROJECT_DIR/tests/matrix/triton_matrix_test_runner.py"
+    if [ -f "$TRITON_MATRIX_TEST_RUNNER" ]; then
+        log_info "Running Triton matrix tests..."
+        
+        # Add benchmark flag if enabled
+        BENCHMARK_ARG=""
+        if [ "$RUN_BENCHMARK" = true ]; then
+            # Create results directory if it doesn't exist
+            mkdir -p "$RESULTS_DIR"
+            BENCHMARK_ARG="--results-dir=$RESULTS_DIR"
+        fi
+        
+        # Run Triton matrix tests
+        if [ "$VERBOSE" = true ]; then
+            python "$TRITON_MATRIX_TEST_RUNNER" $BENCHMARK_ARG
+            TRITON_MATRIX_RESULT=$?
+        else
+            python "$TRITON_MATRIX_TEST_RUNNER" $BENCHMARK_ARG > /tmp/triton_matrix_output.log 2>&1
+            TRITON_MATRIX_RESULT=$?
+            cat /tmp/triton_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
+        fi
+        
+        # Check if tests were successful
+        if [ $TRITON_MATRIX_RESULT -eq 0 ]; then
+            log_success "Triton matrix tests completed successfully"
+            MATRIX_TRITON_TEST_PASSED=true
+        else
+            log_error "Triton matrix tests had failures"
+            ALL_TESTS_PASSED=false
+        fi
+    else
+        log_error "Triton matrix tests not available"
+        if [ "$TEST_MATRIX" = true ]; then
+            ALL_TESTS_PASSED=false
+        fi
+    fi
+fi
+
 # Clean up silently
 if [ "$CLEAN_BUILD" = true ]; then
     rm -rf "$SCRIPT_DIR/build" &> /dev/null
@@ -399,6 +516,20 @@ if [ "$TEST_TRITON" = true ]; then
         echo -e "  ${CHECK_MARK} ${BOLD}Triton tests${RESET}   ${GREEN}Passed successfully${RESET}"
     else
         echo -e "  ${CROSS_MARK} ${BOLD}Triton tests${RESET}   ${RED}Failed${RESET}"
+    fi
+fi
+
+if [ "$TEST_MATRIX" = true ]; then
+    if [ "$MATRIX_CUDA_TEST_PASSED" = true ]; then
+        echo -e "  ${CHECK_MARK} ${BOLD}CUDA matrix tests${RESET}    ${GREEN}Passed successfully${RESET}"
+    else
+        echo -e "  ${CROSS_MARK} ${BOLD}CUDA matrix tests${RESET}    ${RED}Failed${RESET}"
+    fi
+    
+    if [ "$MATRIX_TRITON_TEST_PASSED" = true ]; then
+        echo -e "  ${CHECK_MARK} ${BOLD}Triton matrix tests${RESET}  ${GREEN}Passed successfully${RESET}"
+    else
+        echo -e "  ${CROSS_MARK} ${BOLD}Triton matrix tests${RESET}  ${RED}Failed${RESET}"
     fi
 fi
 

@@ -73,4 +73,5 @@ set(CUDA_LIB cuda_fsa)
 # Add subdirectories for different test categories
 add_subdirectory(cuda)
 add_subdirectory(regex)
+add_subdirectory(matrix)
 
