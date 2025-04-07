@@ -1,2 +1,2 @@
 implementation;operation;M;N;K;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent
-CUDA;matmul;2048;2048;2048;22.2633;9.56209;11.9411;50331648;0
+CUDA;vecadd;10000000;1;1;28.045;0.344616;25.9964;120000000;0

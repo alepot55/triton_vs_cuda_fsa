@@ -45,6 +45,8 @@ struct FSAData {
 
 FSA* regex_to_fsa(const char* regex);
 void free_fsa(FSA* fsa);
+// Change signature to accept a pointer
+FSAData* fsa_to_data(const FSA* fsa); // Changed from const FSA&
 void free_fsa_data(FSAData* data);
 
 #ifdef __cplusplus

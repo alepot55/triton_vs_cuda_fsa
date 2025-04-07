@@ -894,8 +894,6 @@ namespace regex_conversion {
 
 
 // --- C Interface Functions ---
-// Keep implementations for regex_to_fsa, free_fsa, fsa_to_data, free_fsa_data
-// Ensure they call the namespaced regex_conversion::regexToDFA
 extern "C" FSA* regex_to_fsa(const char* regex) {
     try {
         // Use the namespaced function
@@ -914,7 +912,13 @@ extern "C" void free_fsa(FSA* fsa) {
     delete fsa;
 }
 
-extern "C" FSAData* fsa_to_data(const FSA& fsa) {
+// Update implementation to accept a pointer
+extern "C" FSAData* fsa_to_data(const FSA* fsa_ptr) { // Changed argument to pointer
+    if (!fsa_ptr) { // Add null check
+        return nullptr;
+    }
+    const FSA& fsa = *fsa_ptr; // Dereference the pointer to get the reference
+
     FSAData* data = new FSAData;
     data->num_states = fsa.num_states;
     data->num_alphabet_symbols = fsa.num_alphabet_symbols;
@@ -923,20 +927,16 @@ extern "C" FSAData* fsa_to_data(const FSA& fsa) {
     // Appiattisci transition_function
     data->transition_function_size = fsa.num_states * fsa.num_alphabet_symbols;
     data->transition_function = new int[data->transition_function_size];
-    // Initialize with -1 or a specific trap state value if applicable
     std::fill_n(data->transition_function, data->transition_function_size, -1);
     for (int state = 0; state < fsa.num_states; ++state) {
-        // Check state bounds for transition_function vector
-        if (state < fsa.transition_function.size()) {
+        if (static_cast<size_t>(state) < fsa.transition_function.size()) { // Cast state for comparison
             for (int symbol = 0; symbol < fsa.num_alphabet_symbols; ++symbol) {
-                 // Check symbol bounds for the inner vector
-                 if (symbol < fsa.transition_function[state].size()) {
+                 if (static_cast<size_t>(symbol) < fsa.transition_function[state].size()) { // Cast symbol for comparison
                      data->transition_function[state * fsa.num_alphabet_symbols + symbol] = fsa.transition_function[state][symbol];
                  }
             }
         }
     }
-
 
     // Copia accepting_states
     data->accepting_states_size = fsa.accepting_states.size();

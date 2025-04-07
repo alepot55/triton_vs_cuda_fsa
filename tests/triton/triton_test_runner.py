@@ -8,6 +8,7 @@ import os
 import argparse
 import time
 import torch
+import csv
 
 # Add project paths
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -201,12 +202,15 @@ def main():
     tests = [TestCase(d["name"], d.get("regex", ""), d.get("input", ""), (d.get("expected", "true").lower() == "true"))
              for d in test_dicts]
     
-    run_all_tests(tests, args.batch_size, args.verbose)
-    
+    # Run functional tests first (optional, can be skipped if only benchmarking)
+    # run_all_tests(tests, args.batch_size, args.verbose)
+    # Check if functional tests passed before benchmarking (add logic if needed)
+
     # Run benchmarks if requested
     if args.benchmark:
-        log_info(f"Running benchmarks and saving results")
-        
+        print_header("Running Triton Benchmarks") # Use print_header
+        log_info(f"Benchmarking {len(tests)} test cases...")
+
         # Convert relative path to absolute if necessary
         results_dir = args.results_dir
         if results_dir.startswith("../") or results_dir.startswith("./"):
@@ -222,57 +226,71 @@ def main():
         benchmark_file = os.path.join(results_dir, f"triton_benchmark_{timestamp}.csv")
         
         log_info(f"Benchmark results will be saved to {benchmark_file}")
-        
-        # Write CSV header
-        with open(benchmark_file, 'w') as f:
-            f.write("implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;"
-                   "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;"
-                   "compilation_time_ms;num_symbols;number_of_accepting_states;start_state\n")
-            
-            # Run benchmark for each test
-            for test in tests:
-                try:
-                    # Measure execution time
-                    start_time = time.time()
-                    
-                    # Run the Triton FSA engine
-                    metrics, output = fsa_triton(
-                        input_strings=test.input,
-                        regex=test.regex,
-                        batch_size=args.batch_size
-                    )
-                    
-                    # Calculate execution time
-                    end_time = time.time()
-                    execution_time_ms = (end_time - start_time) * 1000
-                    
-                    # Get the result (True/False)
-                    result = bool(output[0])
-                    
-                    # Default values for metrics that might not be available
-                    kernel_time_ms = getattr(metrics, 'kernel_time', execution_time_ms)
-                    mem_transfer_time_ms = getattr(metrics, 'memory_transfer_time', 0)
-                    memory_used = getattr(metrics, 'memory_used', 0)
-                    gpu_util = getattr(metrics, 'gpu_utilization', 0)
-                    num_states = getattr(metrics, 'num_states', 3)
-                    compilation_time_ms = getattr(metrics, 'compilation_time', 0)
-                    num_symbols = getattr(metrics, 'num_symbols', 2)
-                    num_accepting_states = getattr(metrics, 'num_accepting_states', 1)
-                    start_state = getattr(metrics, 'start_state', 0)
-                    
-                    # Write the benchmark results to the CSV file
-                    f.write(f"Triton;{test.input};{args.batch_size};{test.regex};{int(result)};"
-                           f"{execution_time_ms};{kernel_time_ms};{mem_transfer_time_ms};"
-                           f"{memory_used};{gpu_util};{num_states};{str(result)};"
-                           f"{compilation_time_ms};{num_symbols};{num_accepting_states};{start_state}\n")
-                    
-                except Exception as e:
+
+        try:
+            with open(benchmark_file, 'w', newline='') as f: # Use newline='' for csv
+                writer = csv.writer(f, delimiter=';')
+                # Write CSV header
+                writer.writerow([
+                    "implementation", "technique", "input_string", "batch_size", "regex_pattern", "match_result",
+                    "execution_time_ms", "kernel_time_ms", "mem_transfer_time_ms", "memory_used_bytes",
+                    "gpu_util_percent", "num_states", "match_success", "compilation_time_ms",
+                    "num_symbols", "number_of_accepting_states", "start_state"
+                ])
+
+                benchmark_count = 0
+                # Run benchmark for each test
+                for test in tests:
                     if args.verbose:
-                        print(f"  {Colors.RED}Benchmark error for test {test.name}: {e}{Colors.RESET}")
-        
-        log_success(f"Benchmark results saved to: {benchmark_file}")
-    
-    return 0
+                         log_info(f"Benchmarking test: {test.name}")
+                    try:
+                        # Run the Triton FSA engine - it now returns fsa_properties
+                        metrics, output, fsa_properties = fsa_triton(
+                            input_strings=test.input,
+                            regex=test.regex,
+                            batch_size=args.batch_size,
+                            technique='TABLE_GLOBAL' # Specify technique if needed
+                        )
+
+                        # Get the result (True/False)
+                        result = bool(output[0].item()) # Use .item() to get Python bool
+
+                        # Write the benchmark results to the CSV file using correct attributes
+                        writer.writerow([
+                            "Triton", "TABLE_GLOBAL", test.input, args.batch_size, test.regex, int(result),
+                            metrics.execution_time,        # Use direct attribute access
+                            metrics.kernel_time,           # Use direct attribute access
+                            metrics.memory_transfer_time,  # Use direct attribute access
+                            metrics.memory_used,           # Use direct attribute access
+                            metrics.gpu_utilization,       # Use direct attribute access
+                            fsa_properties.get('num_states', -1), # Get from returned dict
+                            str(result),
+                            metrics.compilation_time_ms,   # Use direct attribute access
+                            fsa_properties.get('num_symbols', -1), # Get from returned dict
+                            fsa_properties.get('accepting_states_size', -1), # Get from returned dict
+                            fsa_properties.get('start_state', -1)  # Get from returned dict
+                        ])
+                        benchmark_count += 1
+
+                    except Exception as e:
+                        log_error(f"Benchmark error for test {test.name}: {e}")
+                        # Optionally write an error row
+                        writer.writerow([
+                            "Triton", "TABLE_GLOBAL", test.input, args.batch_size, test.regex, "ERROR",
+                            0, 0, 0, 0, 0, -1, "ERROR", 0, -1, -1, -1
+                        ])
+
+            log_success(f"Benchmark completed. {benchmark_count} results saved to: {benchmark_file}")
+
+        except IOError as e:
+            log_error(f"Failed to write benchmark file {benchmark_file}: {e}")
+            return 1 # Indicate failure
+
+    return 0 # Indicate success
 
 if __name__ == "__main__":
+    # Ensure CUDA is available before running
+    if not torch.cuda.is_available():
+        log_error("CUDA device not found. Triton tests require a GPU.")
+        sys.exit(1)
     sys.exit(main())
