@@ -1,6 +1,8 @@
-#include "../cases/test_case.h"  // Updated path to use cases directory
+#include "../cases/test_case.h"
 #include "../../cuda/src/cuda_fsa_engine.h"
 #include "../../common/include/fsa_definition.h"
+#include "../../common/src/regex_conversion.h" // Include for regexToDFA
+#include "../../common/benchmark/benchmark_metrics.h" // Include benchmark metrics
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -8,7 +10,8 @@
 #include <vector>
 #include <fstream>
 #include <ctime>
-#include <unistd.h>
+#include <unistd.h> // For getcwd
+#include <map>      // For technique map
 
 // ANSI color codes aggiornati per uniformità
 namespace Color {
@@ -75,9 +78,15 @@ void logError(const std::string& message) {
     std::cout << timestamp() << " " << ERROR_MARK << " " << Color::RED << message << Color::RESET << std::endl;
 }
 
-// Forward declarations
-void runTest(TestCase& test, int batch_size, bool verbose);
-void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose);
+// Helper to convert technique enum to string
+std::string techniqueToString(CUDATechnique technique) {
+    switch (technique) {
+        case CUDATechnique::GLOBAL_MEMORY: return "Global";
+        case CUDATechnique::CONSTANT_MEMORY: return "Constant";
+        case CUDATechnique::SHARED_MEMORY: return "Shared"; // Added
+        default: return "Unknown";
+    }
+}
 
 // Main function for the CUDA test runner
 int main(int argc, char** argv) {
@@ -112,16 +121,17 @@ int main(int argc, char** argv) {
     
     std::vector<TestCase> tests;
     if (!loadTestsFromFile(testFile, tests)) {
-        logError("No tests found");
+        logError("Failed to load tests from " + testFile);
         return 1;
     }
-    
-    logInfo(std::to_string(tests.size()) + " tests to run");
-    
-    // Run all tests 
-    runAllTests(tests, batchSize, verbose);
-    
-    // Run benchmarks if requested
+    if (tests.empty()) {
+        logError("No tests found in " + testFile);
+        return 1; // Exit if no tests are loaded
+    }
+
+    logInfo(std::to_string(tests.size()) + " tests loaded.");
+
+    // --- BENCHMARK EXECUTION ---
     if (benchmark) {
         // Generate timestamp for benchmark file
         auto now = std::chrono::system_clock::now();
@@ -143,9 +153,14 @@ int main(int argc, char** argv) {
         
         std::string benchmarkFile = resultsDir + "/cuda_benchmark_" + timestamp.str() + ".csv";
         
-        // Ensure directory exists
+        // Ensure directory exists and check return value
         std::string mkdirCmd = "mkdir -p " + resultsDir;
-        system(mkdirCmd.c_str());
+        int mkdir_ret = system(mkdirCmd.c_str());
+        if (mkdir_ret != 0) {
+            logError("Failed to create results directory (command returned " + std::to_string(mkdir_ret) + "): " + resultsDir);
+            // Consider exiting or handling the error appropriately
+            // return 1; // Example: exit if directory creation fails
+        }
         
         logInfo("Running benchmarks and saving to " + benchmarkFile);
         
@@ -155,30 +170,43 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        // Write CSV header
-        csvFile << "implementation;input_string;batch_size;regex_pattern;match_result;execution_time_ms;kernel_time_ms;"
-                << "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;num_states;match_success;"
-                << "compilation_time_ms;num_symbols;number_of_accepting_states;start_state" << std::endl;
-        
-        // Run benchmark for each test
+        // Write CSV header - Added 'technique' column
+        csvFile << "implementation;technique;input_string;batch_size;regex_pattern;match_result;"
+                << "execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;"
+                << "num_states;match_success;compilation_time_ms;num_symbols;number_of_accepting_states;start_state" << std::endl;
+
+        std::vector<CUDATechnique> techniques_to_benchmark = {
+            CUDATechnique::GLOBAL_MEMORY,
+            CUDATechnique::CONSTANT_MEMORY,
+            CUDATechnique::SHARED_MEMORY // Added Shared Memory
+        };
+
+        int benchmark_count = 0;
         for (const auto& test : tests) {
             try {
-                auto start_time = std::chrono::high_resolution_clock::now();
-                
-                // Run the FSA conversion
-                FSA fsa = CUDAFSAEngine::regexToDFA(test.regex);
-                bool result = CUDAFSAEngine::runSingleTest(test.regex, test.input);
-                
-                auto end_time = std::chrono::high_resolution_clock::now();
-                double execution_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-                
-                // Write benchmark data to CSV
-                csvFile << "CUDA;" << test.input << ";" << batchSize << ";" << test.regex << ";" 
-                        << (result ? "1" : "0") << ";" << execution_time_ms << ";" << execution_time_ms << ";"
-                        << "0;0;0;" << fsa.num_states << ";" << (result ? "True" : "False") << ";"
-                        << "0;" << fsa.alphabet.size() << ";" << fsa.accepting_states.size() << ";"
-                        << fsa.start_state << std::endl;
-                
+                // Convert regex to FSA once per test case using the correct namespace
+                FSA fsa = regex_conversion::regexToDFA(test.regex);
+                CUDAFSAEngine::CUDAFSMRunner runner(fsa); // Create runner for this FSA
+
+                for (CUDATechnique technique : techniques_to_benchmark) {
+                    if (verbose) {
+                        logInfo("Benchmarking test " + test.name + " with technique " + techniqueToString(technique));
+                    }
+
+                    std::vector<std::string> inputs(batchSize, test.input);
+                    std::vector<bool> results = runner.runBatch(inputs, technique); // Use runner instance
+                    bool match_success = results.empty() ? false : results[0];
+                    BenchmarkMetrics metrics = runner.getLastMetrics(); // Use runner instance
+
+                    // Write benchmark data to CSV - Use correct member names
+                    csvFile << "CUDA;" << techniqueToString(technique) << ";" << test.input << ";" << batchSize << ";" 
+                            << test.regex << ";" << (match_success ? "1" : "0") << ";" << metrics.execution_time_ms << ";" 
+                            << metrics.kernel_time_ms << ";" << metrics.memory_transfer_time_ms << ";" << metrics.memory_used_bytes << ";" // Corrected: memory_transfer_time_ms
+                            << metrics.gpu_utilization_percent << ";" << fsa.num_states << ";" << (match_success ? "True" : "False") << ";" // Corrected: gpu_utilization_percent
+                            << metrics.compilation_time_ms << ";" << fsa.alphabet.size() << ";" << fsa.accepting_states.size() << ";" 
+                            << fsa.start_state << std::endl;
+                    benchmark_count++;
+                }
             } catch (const std::exception& e) {
                 if (verbose) {
                     logError("Benchmark failed for test " + test.name + ": " + e.what());
@@ -188,146 +216,127 @@ int main(int argc, char** argv) {
         
         csvFile.close();
         logSuccess("Benchmark results saved to: " + benchmarkFile);
-    }
-    
-    return 0;
-}
 
-// Implementation for runTest
-void runTest(TestCase& test, int batch_size, bool verbose) {
-    if (verbose) {
-        // Compact test info on a single line
-        std::cout << Color::CYAN << "• " << test.name << Color::RESET 
-                  << " | regex: " << test.regex 
-                  << " | input: '" << test.input << "'"
-                  << " | expect: " << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗")) + Color::RESET
-                  << std::endl;
-    }
-    try {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
-        // Run test
-        FSA fsa = CUDAFSAEngine::regexToDFA(test.regex);
-        if (batch_size == 1) {
-            test.actual_result = CUDAFSAEngine::runSingleTest(test.regex, test.input);
-        } else {
-            std::vector<std::string> inputs(batch_size, test.input);
-            std::vector<bool> results = CUDAFSAEngine::runBatchOnGPU(fsa, inputs);
-            if (!results.empty()) {
-                test.actual_result = results[0];
-            }
-        }
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> dt = end_time - start_time;
-        test.metrics.execution_time_ms = dt.count() * 1000;
-        
-        if (verbose) {
-            bool passed = test.actual_result == test.expected_result;
-            std::string status = passed ? "✓" : "✗";
-            std::string status_color = passed ? Color::GREEN : Color::RED;
-            std::string result_color = test.actual_result ? Color::GREEN : Color::RED;
-            
-            // Print result on a single line
-            std::cout << "  result: " << result_color << (test.actual_result ? "✓" : "✗") << Color::RESET
-                    << " | status: " << status_color << status << Color::RESET
-                    << " | time: " << std::fixed << std::setprecision(2) << test.metrics.execution_time_ms << "ms"
-                    << std::endl;
-        }
-    } catch (const std::exception& e) {
-        if (verbose) {
-            std::cout << "  " << Color::RED << "error: " << e.what() << Color::RESET << std::endl << std::endl;
-        } else {
-            logError("Test " + test.name + " failed: " + e.what());
-        }
-        test.actual_result = false;
-    }
-}
-
-void runAllTests(std::vector<TestCase>& tests, int batch_size, bool verbose) {
-    int passed = 0;
-    double total_time = 0.0;
-    std::vector<std::string> failedTests;
-    
-    // Start timing
-    auto start_time = std::chrono::high_resolution_clock::now();
-    
-    // Progress counter for non-verbose mode
-    int total = tests.size();
-    int current = 0;
-    
-    // Array di caratteri spinner per coerenza con altri runner
-    const char* spinChars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-    int spinIndex = 0;
-    
-    for (auto& test : tests) {
-        current++;
-        
-        // Show progress counter in non-verbose mode
-        if (!verbose) {
-            // Aggiornamento stile spinner coerente
-            std::cout << "\r" << timestamp() << " " << GEAR << " " 
-                    << Color::BLUE << "Processing tests " << Color::RESET
-                    << Color::YELLOW << spinChars[spinIndex % 10] << Color::RESET
-                    << " [" << current << "/" << total << "] " << std::flush;
-            spinIndex++;
-        }
-        
-        runTest(test, batch_size, verbose);
-        if (test.actual_result == test.expected_result) {
-            passed++;
-        } else {
-            failedTests.push_back(test.name);
-        }
-        total_time += test.metrics.execution_time_ms;
-    }
-    
-    // Clear progress line
-    if (!verbose) {
-        std::cout << "\r" << std::string(80, ' ') << "\r" << std::flush;
-    }
-    
-    // Calculate total elapsed time
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end_time - start_time;
-    double elapsed_ms = elapsed.count() * 1000;
-    
-    // Print minimal summary
-    
-    double pass_percent = tests.empty() ? 0 : (passed * 100.0 / tests.size());
-    std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
-
-    // Minimal test summary
-    std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
-    std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
-                << status_color << "(" << std::fixed << std::setprecision(1) 
-                << pass_percent << "%)" << Color::RESET << std::endl;
-    std::cout << "  Time: " << std::fixed << std::setprecision(2) 
-                << elapsed_ms << "ms\n" << Color::RESET << std::endl;   
-
-    if (failedTests.empty()) {
-        logSuccess("CUDA tests completed successfully");
-        // Ritorna cod. uscita 0 per indicare successo
+    // --- REGULAR TEST EXECUTION ---
     } else {
-        logError("CUDA tests had failures");
-        
-        // Minimal failed test reporting
-        std::cout << Color::RED << "\nFailed:" << Color::RESET << std::endl;
-        
-        for (const auto& test : tests) {
-            if (test.actual_result != test.expected_result) {
-                std::cout << "  • " << test.name << std::endl;
-                std::cout << "    regex: " << test.regex << std::endl;
-                std::cout << "    input: '" << test.input << "'" << std::endl;
-                std::cout << "    expected: " 
-                          << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
-                          << Color::RESET << std::endl;
-                std::cout << "    got: " 
-                          << (test.actual_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
-                          << Color::RESET << std::endl;
+        printHeader("Running CUDA Tests (Default Technique)");
+        int passed = 0;
+        double total_time_ms = 0.0;
+        std::vector<std::string> failedTestNames;
+        auto overall_start_time = std::chrono::high_resolution_clock::now();
+
+        int current = 0;
+        int total = tests.size();
+        const char* spinChars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+        int spinIndex = 0;
+
+        for (auto& test : tests) { // Use reference to update actual_result
+            current++;
+            
+            // Show progress counter in non-verbose mode
+            if (!verbose) {
+                // Aggiornamento stile spinner coerente
+                std::cout << "\r" << timestamp() << " " << GEAR << " " 
+                        << Color::BLUE << "Processing tests " << Color::RESET
+                        << Color::YELLOW << spinChars[spinIndex % 10] << Color::RESET
+                        << " [" << current << "/" << total << "] " << std::flush;
+                spinIndex++;
+            }
+            
+            if (verbose) {
+                // Compact test info on a single line
+                std::cout << Color::CYAN << "• " << test.name << Color::RESET 
+                          << " | regex: " << test.regex 
+                          << " | input: '" << test.input << "'"
+                          << " | expect: " << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗")) + Color::RESET
+                          << std::endl;
+            }
+
+            try {
+                CUDATechnique default_technique = CUDATechnique::GLOBAL_MEMORY;
+                // Use the correct namespace for conversion
+                FSA fsa = regex_conversion::regexToDFA(test.regex);
+                CUDAFSAEngine::CUDAFSMRunner runner(fsa);
+
+                std::vector<std::string> inputs(batchSize, test.input);
+                // Use the runner instance to run the batch
+                std::vector<bool> results = runner.runBatch(inputs, default_technique);
+                test.actual_result = results.empty() ? false : results[0];
+                test.metrics = runner.getLastMetrics(); // Get metrics from the runner
+                total_time_ms += test.metrics.execution_time_ms;
+
+                if (verbose) {
+                    bool passed = test.actual_result == test.expected_result;
+                    std::string status = passed ? "✓" : "✗";
+                    std::string status_color = passed ? Color::GREEN : Color::RED;
+                    std::string result_color = test.actual_result ? Color::GREEN : Color::RED;
+                    
+                    // Print result on a single line
+                    std::cout << "  result: " << result_color << (test.actual_result ? "✓" : "✗") << Color::RESET
+                            << " | status: " << status_color << status << Color::RESET
+                            << " | time: " << std::fixed << std::setprecision(2) << test.metrics.execution_time_ms << "ms"
+                            << std::endl;
+                }
+
+            } catch (const std::exception& e) {
+                if (verbose) {
+                    std::cout << "  " << Color::RED << "error: " << e.what() << Color::RESET << std::endl << std::endl;
+                } else {
+                    logError("Test " + test.name + " failed: " + e.what());
+                }
+                test.actual_result = false;
             }
         }
+        
+        // Clear progress line
+        if (!verbose) {
+            std::cout << "\r" << std::string(80, ' ') << "\r" << std::flush;
+        }
+        
+        // Calculate total elapsed time
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end_time - overall_start_time;
+        double elapsed_ms = elapsed.count() * 1000;
+        
+        // Print minimal summary
+        
+        double pass_percent = tests.empty() ? 0 : (passed * 100.0 / tests.size());
+        std::string status_color = (pass_percent == 100) ? Color::GREEN : (pass_percent < 50 ? Color::RED : Color::YELLOW);
 
-        std::cout << "\n";
+        // Minimal test summary
+        std::cout << "\n" << Color::BOLD << "Test Summary:" << Color::RESET << std::endl;
+        std::cout << "  Tests: " << passed << "/" << tests.size() << " " 
+                    << status_color << "(" << std::fixed << std::setprecision(1) 
+                    << pass_percent << "%)" << Color::RESET << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(2) 
+                    << elapsed_ms << "ms\n" << Color::RESET << std::endl;   
+
+        if (failedTestNames.empty()) {
+            logSuccess("CUDA tests completed successfully");
+            // Ritorna cod. uscita 0 per indicare successo
+        } else {
+            logError("CUDA tests had failures");
+            
+            // Minimal failed test reporting
+            std::cout << Color::RED << "\nFailed:" << Color::RESET << std::endl;
+            
+            for (const auto& test : tests) {
+                if (test.actual_result != test.expected_result) {
+                    std::cout << "  • " << test.name << std::endl;
+                    std::cout << "    regex: " << test.regex << std::endl;
+                    std::cout << "    input: '" << test.input << "'" << std::endl;
+                    std::cout << "    expected: " 
+                              << (test.expected_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
+                              << Color::RESET << std::endl;
+                    std::cout << "    got: " 
+                              << (test.actual_result ? Color::GREEN + std::string("✓") : Color::RED + std::string("✗"))
+                              << Color::RESET << std::endl;
+                }
+            }
+
+            std::cout << "\n";
+        }
     }
+
+    return 0; // Return success code
 }

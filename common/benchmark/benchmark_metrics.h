@@ -1,8 +1,14 @@
 #pragma once
 
 #include <iostream>
-#include <cuda_runtime.h>
+// Include cuda_runtime only if needed directly in this header, otherwise forward declare types
+// #include <cuda_runtime.h>
+struct cudaDeviceProp; // Forward declaration if needed
+
+// Include nvml.h directly instead of forward declaring
 #include <nvml.h>
+// typedef struct nvmlDevice_st* nvmlDevice_t; // Forward declaration - REMOVED
+// typedef enum nvmlReturn_enum nvmlReturn_t; // Forward declaration - REMOVED
 
 // Struct to store benchmark metrics
 struct BenchmarkMetrics {
@@ -27,7 +33,9 @@ struct BenchmarkMetrics {
 // NVML utility functions
 bool initNVML();
 void shutdownNVML();
-
-// Add these missing function declarations
 double getGPUUtilization();
+// size_t getMemoryUsage(); // This likely needs cuda_runtime.h, keep it declared if benchmark_metrics.cpp includes it.
+// If benchmark_metrics.cpp includes cuda_runtime.h, this declaration is fine.
+// Otherwise, consider if this function truly belongs in this generic header.
+#include <cuda_runtime.h> // Include necessary header for cudaMemGetInfo used in getMemoryUsage
 size_t getMemoryUsage();

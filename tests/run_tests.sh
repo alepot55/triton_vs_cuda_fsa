@@ -16,6 +16,7 @@ LOG_FILE="/tmp/fsa_test_build.log"
 RUN_BENCHMARK=false # Default: don't run benchmarks
 RESULTS_DIR="$PROJECT_DIR/results" # Directory to save benchmark results
 TEST_MATRIX=false  # Default: don't test matrix operations
+RESULTS_DIR_ARG="" # Argument to pass to runners
 
 # Variables to track test status
 ALL_TESTS_PASSED=true
@@ -164,6 +165,14 @@ for arg in "$@"; do
     esac
 done
 
+# Set RESULTS_DIR_ARG if benchmarking is enabled
+if [ "$RUN_BENCHMARK" = true ]; then
+    # Create results directory if it doesn't exist
+    mkdir -p "$RESULTS_DIR"
+    RESULTS_DIR_ARG="--results-dir=$RESULTS_DIR"
+    log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
+fi
+
 # Force clean if requested (silently)
 if [ "$FORCE_CLEAN" = true ]; then
     rm -rf "$SCRIPT_DIR/build" &> /dev/null
@@ -255,21 +264,17 @@ if [ "$TEST_CUDA" = true ]; then
         log_info "Running CUDA tests..."
         
         # Add benchmark flag if enabled
-        BENCHMARK_ARG=""
+        BENCHMARK_FLAG=""
         if [ "$RUN_BENCHMARK" = true ]; then
-            # Create results directory if it doesn't exist
-            mkdir -p "$RESULTS_DIR"
-            # Update to pass the results directory explicitly
-            BENCHMARK_ARG="--benchmark --results-dir=$RESULTS_DIR"
-            log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
+            BENCHMARK_FLAG="--benchmark"
         fi
         
-        # Run with or without verbose flag
+        # Run with or without verbose flag, passing benchmark flag and results dir
         if [ "$VERBOSE" = true ]; then
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" --verbose $BENCHMARK_ARG
+            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" --verbose $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
             TEST_RESULT=$?
         else
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" $BENCHMARK_ARG
+            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
             TEST_RESULT=$?
         fi
         
@@ -344,20 +349,17 @@ if [ "$TEST_TRITON" = true ]; then
         log_info "Running Triton tests..."
         
         # Add benchmark flag if enabled
-        BENCHMARK_ARG=""
+        BENCHMARK_FLAG=""
         if [ "$RUN_BENCHMARK" = true ]; then
-            BENCHMARK_ARG="--benchmark"
-            # Create results directory if it doesn't exist
-            mkdir -p "$RESULTS_DIR"
-            log_info "Benchmark mode enabled, results will be saved in $RESULTS_DIR"
+            BENCHMARK_FLAG="--benchmark"
         fi
         
-        # Run Triton tests using the test runner with appropriate verbosity
+        # Run Triton tests using the test runner with appropriate verbosity, benchmark flag, and results dir
         if [ "$VERBOSE" = true ]; then
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE" --verbose $BENCHMARK_ARG
+            python "$TRITON_TEST_RUNNER" "$TEST_FILE" --verbose $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
             TEST_RESULT=$?
         else
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE" $BENCHMARK_ARG
+            python "$TRITON_TEST_RUNNER" "$TEST_FILE" $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
             TEST_RESULT=$?
         fi
         
@@ -416,19 +418,17 @@ if [ "$TEST_MATRIX" = true ]; then
         log_info "Running CUDA matrix tests..."
         
         # Add benchmark flag if enabled
-        BENCHMARK_ARG=""
+        BENCHMARK_FLAG=""
         if [ "$RUN_BENCHMARK" = true ]; then
-            # Create results directory if it doesn't exist
-            mkdir -p "$RESULTS_DIR"
-            BENCHMARK_ARG="--results-dir=$RESULTS_DIR"
+            BENCHMARK_FLAG="--benchmark" # CUDA runner uses --benchmark implicitly with results dir
         fi
         
-        # Run the tests
+        # Run the tests, passing results dir arg which implies benchmark for this runner
         if [ "$VERBOSE" = true ]; then
-            ./matrix/cuda_matrix_test_runner $BENCHMARK_ARG
+            ./matrix/cuda_matrix_test_runner $RESULTS_DIR_ARG # Pass results dir
             CUDA_MATRIX_RESULT=$?
         else
-            ./matrix/cuda_matrix_test_runner $BENCHMARK_ARG > /tmp/cuda_matrix_output.log 2>&1
+            ./matrix/cuda_matrix_test_runner $RESULTS_DIR_ARG > /tmp/cuda_matrix_output.log 2>&1 # Pass results dir
             CUDA_MATRIX_RESULT=$?
             cat /tmp/cuda_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
         fi
@@ -451,20 +451,15 @@ if [ "$TEST_MATRIX" = true ]; then
     if [ -f "$TRITON_MATRIX_TEST_RUNNER" ]; then
         log_info "Running Triton matrix tests..."
         
-        # Add benchmark flag if enabled
-        BENCHMARK_ARG=""
-        if [ "$RUN_BENCHMARK" = true ]; then
-            # Create results directory if it doesn't exist
-            mkdir -p "$RESULTS_DIR"
-            BENCHMARK_ARG="--results-dir=$RESULTS_DIR"
-        fi
+        # Add benchmark flag if enabled (Triton runner uses --benchmark implicitly with results dir)
+        BENCHMARK_FLAG=""
         
-        # Run Triton matrix tests
+        # Run Triton matrix tests, passing results dir arg
         if [ "$VERBOSE" = true ]; then
-            python "$TRITON_MATRIX_TEST_RUNNER" $BENCHMARK_ARG
+            python "$TRITON_MATRIX_TEST_RUNNER" $RESULTS_DIR_ARG # Pass results dir
             TRITON_MATRIX_RESULT=$?
         else
-            python "$TRITON_MATRIX_TEST_RUNNER" $BENCHMARK_ARG > /tmp/triton_matrix_output.log 2>&1
+            python "$TRITON_MATRIX_TEST_RUNNER" $RESULTS_DIR_ARG > /tmp/triton_matrix_output.log 2>&1 # Pass results dir
             TRITON_MATRIX_RESULT=$?
             cat /tmp/triton_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
         fi

@@ -1,4 +1,6 @@
-#include "fsa_engine.h"
+#include "regex_conversion.h" // Include the new header
+#include "../include/fsa_definition.h" // Keep fsa_definition include
+// Remove #include "fsa_engine.h" if FSAEngine class is no longer used for these functions
 #include <stack>
 #include <set>
 #include <map>
@@ -845,79 +847,59 @@ FSA NFAtoDFA(const NFA& nfa) {
     return dfa;
 }
 
-FSA FSAEngine::regexToDFA(const std::string& regex) {
-    conversionDebugLog.clear(); // Clear the log at the start of each conversion
-    try {
-        NFA nfa = regexToNFA(regex);
-        FSA dfa = NFAtoDFA(nfa);
-        conversionDebugLog += "DEBUG: DFA created with " + std::to_string(dfa.num_states) + " states\n";
-        return dfa;
-    } catch (const std::exception& e) {
-        // Throw an error if the regex is invalid
-        std::string errorMsg = e.what();
-        conversionDebugLog += "ERROR: " + errorMsg + "\n";
-        std::cerr << "Error in regexToDFA: " << errorMsg << std::endl;
-        throw std::runtime_error("Invalid regex: " + errorMsg);
-    }
-}
+// --- Main Conversion Function (within namespace) ---
+namespace regex_conversion {
 
-bool FSAEngine::runDFA(const FSA& fsa, const std::string& input) {
-    // If input is empty, check acceptance regardless of the alphabet.
-    if (input.empty()) {
-        return std::find(fsa.accepting_states.begin(),
-                         fsa.accepting_states.end(),
-                         fsa.start_state) != fsa.accepting_states.end();
-    }
-    if (fsa.num_states == 0) { // Previously also checked fsa.alphabet.empty(), now omit that.
-        return false;
-    }
-
-    int currentState = fsa.start_state;
-
-    // Caso speciale per stringa vuota: accetta se lo stato iniziale è accettante
-    if (input.empty()) {
-        return std::find(fsa.accepting_states.begin(),
-                         fsa.accepting_states.end(),
-                         currentState) != fsa.accepting_states.end();
-    }
-
-    // Elaborazione della stringa: per ogni simbolo si aggiorna lo stato corrente
-    for (char c : input) {
-        int symbolIdx = -1;
-        for (size_t i = 0; i < fsa.alphabet.size(); i++) {
-            if (c == fsa.alphabet[i]) {
-                symbolIdx = i;
-                break;
-            }
+    // Move the implementation of regexToDFA here (remove from FSAEngine class if applicable)
+    FSA regexToDFA(const std::string& regex) {
+        conversionDebugLog.clear(); // Clear the log at the start of each conversion
+        try {
+            NFA nfa = ::regexToNFA(regex); // Call the global/static regexToNFA helper
+            FSA dfa = ::NFAtoDFA(nfa);     // Call the global/static NFAtoDFA helper
+            conversionDebugLog += "DEBUG: DFA created with " + std::to_string(dfa.num_states) + " states\n";
+            return dfa;
+        } catch (const std::exception& e) {
+            // Throw an error if the regex is invalid
+            std::string errorMsg = e.what();
+            conversionDebugLog += "ERROR: " + errorMsg + "\n";
+            std::cerr << "Error in regexToDFA: " << errorMsg << std::endl;
+            throw std::runtime_error("Invalid regex: " + errorMsg);
         }
-
-        // Se il simbolo non appartiene all'alfabeto, rifiuta l'input
-        if (symbolIdx == -1) {
-            return false;
-        }
-
-        // Verifica se esiste una transizione valida
-        if (currentState >= static_cast<int>(fsa.transition_function.size()) ||
-            symbolIdx >= static_cast<int>(fsa.transition_function[currentState].size()) ||
-            fsa.transition_function[currentState][symbolIdx] < 0) {
-            return false;
-        }
-
-        currentState = fsa.transition_function[currentState][symbolIdx];
     }
 
-    // Accetta se lo stato finale è uno stato di accettazione
-    return std::find(fsa.accepting_states.begin(),
-                     fsa.accepting_states.end(),
-                     currentState) != fsa.accepting_states.end();
-}
+    // Implementations for the debug functions if they weren't static before
+    std::string getConversionDebugLog() {
+        return ::conversionDebugLog; // Access the static global variable
+    }
 
-// Funzioni di interfaccia C per l'uso della libreria
+    void clearDebugOutput() {
+        ::debugOutput.clear();
+    }
 
+    std::string getDebugOutput() {
+        return ::debugOutput;
+    }
+
+    void addDebug(const std::string& message) {
+        ::debugOutput += message + "\n";
+    }
+
+} // namespace regex_conversion
+
+// --- DFA Execution Function ---
+// Remove the unused static runDFA function
+/* static bool runDFA(const FSA& fsa, const std::string& input) {
+    // ... implementation removed ...
+} */
+
+
+// --- C Interface Functions ---
+// Keep implementations for regex_to_fsa, free_fsa, fsa_to_data, free_fsa_data
+// Ensure they call the namespaced regex_conversion::regexToDFA
 extern "C" FSA* regex_to_fsa(const char* regex) {
     try {
-        FSAEngine engine;
-        FSA fsa = engine.regexToDFA(regex);
+        // Use the namespaced function
+        FSA fsa = regex_conversion::regexToDFA(regex);
         // Alloca memoria per FSA e copia i dati
         FSA* fsa_ptr = new FSA;
         *fsa_ptr = fsa;
@@ -932,18 +914,6 @@ extern "C" void free_fsa(FSA* fsa) {
     delete fsa;
 }
 
-struct FSAData {
-    int num_states;
-    int num_alphabet_symbols;
-    int* transition_function; // Array 1D: [state * num_symbols + symbol]
-    int transition_function_size;
-    int start_state;
-    int* accepting_states;
-    int accepting_states_size;
-    char* alphabet;
-    int alphabet_size;
-};
-
 extern "C" FSAData* fsa_to_data(const FSA& fsa) {
     FSAData* data = new FSAData;
     data->num_states = fsa.num_states;
@@ -953,11 +923,20 @@ extern "C" FSAData* fsa_to_data(const FSA& fsa) {
     // Appiattisci transition_function
     data->transition_function_size = fsa.num_states * fsa.num_alphabet_symbols;
     data->transition_function = new int[data->transition_function_size];
+    // Initialize with -1 or a specific trap state value if applicable
+    std::fill_n(data->transition_function, data->transition_function_size, -1);
     for (int state = 0; state < fsa.num_states; ++state) {
-        for (int symbol = 0; symbol < fsa.num_alphabet_symbols; ++symbol) {
-            data->transition_function[state * fsa.num_alphabet_symbols + symbol] = fsa.transition_function[state][symbol];
+        // Check state bounds for transition_function vector
+        if (state < fsa.transition_function.size()) {
+            for (int symbol = 0; symbol < fsa.num_alphabet_symbols; ++symbol) {
+                 // Check symbol bounds for the inner vector
+                 if (symbol < fsa.transition_function[state].size()) {
+                     data->transition_function[state * fsa.num_alphabet_symbols + symbol] = fsa.transition_function[state][symbol];
+                 }
+            }
         }
     }
+
 
     // Copia accepting_states
     data->accepting_states_size = fsa.accepting_states.size();

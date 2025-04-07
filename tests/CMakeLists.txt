@@ -65,6 +65,12 @@ file(GLOB CUDA_SOURCES
     "${CUDA_DIR}/benchmarks/*.cpp"
 )
 
+# Add the new kernel file to the list of sources
+list(APPEND CUDA_SOURCES "${CUDA_DIR}/src/cuda_fsa_table_kernels.cu")
+# Add placeholders later if implemented:
+# list(APPEND CUDA_SOURCES "${CUDA_DIR}/src/cuda_fsa_direct_kernels.cu")
+# list(APPEND CUDA_SOURCES "${CUDA_DIR}/src/cuda_fsa_parallel_kernels.cu")
+
 # Create CUDA library target
 add_library(cuda_fsa STATIC ${CUDA_SOURCES})
 target_link_libraries(cuda_fsa PRIVATE common ${CUDA_LIBRARIES} nvidia-ml)

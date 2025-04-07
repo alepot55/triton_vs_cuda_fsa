@@ -65,9 +65,14 @@ void logError(const std::string& message) {
 
 void saveBenchmarkResults(const std::string& operation, const BenchmarkMetrics& metrics, 
                         int M, int N, int K, const std::string& resultsDir) {
-    // Create results directory if it doesn't exist
+    // Create results directory if it doesn't exist and check return value
     std::string mkdirCmd = "mkdir -p " + resultsDir;
-    system(mkdirCmd.c_str());
+    int mkdir_ret = system(mkdirCmd.c_str());
+    if (mkdir_ret != 0) {
+        logError("Failed to create results directory (command returned " + std::to_string(mkdir_ret) + "): " + resultsDir);
+        // Decide how to handle this error, e.g., return or log and continue
+        // return; // Example: return if directory creation fails
+    }
     
     // Format timestamp for filename
     auto now = std::chrono::system_clock::now();
@@ -81,7 +86,7 @@ void saveBenchmarkResults(const std::string& operation, const BenchmarkMetrics& 
     // Open file for writing
     std::ofstream csvFile(benchmarkFile);
     if (!csvFile.is_open()) {
-        std::cerr << "Failed to open benchmark file: " + benchmarkFile << std::endl;
+        logError("Failed to open benchmark file: " + benchmarkFile);
         return;
     }
     
