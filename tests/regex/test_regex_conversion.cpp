@@ -57,12 +57,11 @@ void logError(const std::string& message) {
 
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        logError("Usage: " + std::string(argv[0]) + " <test_file>");
-        return 1;
+    std::string testFile = "../../tests/cases/test_cases.txt"; // Default path relative to build dir
+    if (argc > 1) {
+        testFile = argv[1]; // Allow overriding test file path
     }
 
-    std::string testFile = argv[1];
     std::vector<TestCase> tests;
 
     if (!loadTestsFromFile(testFile, tests)) {
@@ -85,13 +84,13 @@ int main(int argc, char* argv[]) {
             FSA dfa = regex_conversion::regexToDFA(test.regex);
 
             // Basic validation: check if DFA has states
-            if (dfa.num_states > 0) {
+            if (dfa.num_states > 0 && dfa.start_state >= 0 && dfa.start_state < dfa.num_states) {
                  std::cout << "  " << CHECK_MARK << " Conversion successful (" << dfa.num_states << " states)" << std::endl;
                  passed++;
             } else {
-                 std::cout << "  " << CROSS_MARK << " Conversion resulted in an empty DFA" << std::endl;
+                 std::cout << "  " << CROSS_MARK << " Conversion resulted in invalid FSA (States: " << dfa.num_states << ", Start: " << dfa.start_state << ")" << std::endl;
                  failed++;
-                 failedTestDetails.push_back("Test '" + test.name + "': Conversion resulted in an empty DFA.");
+                 failedTestDetails.push_back("Test '" + test.name + "': Conversion resulted in invalid FSA.");
             }
         } catch (const std::exception& e) {
             std::cout << "  " << CROSS_MARK << " Conversion failed: " << e.what() << std::endl;
@@ -112,6 +111,7 @@ int main(int argc, char* argv[]) {
         for(const auto& detail : failedTestDetails) {
             std::cout << "  - " << detail << std::endl;
         }
+        std::cout << "\n" << CROSS_MARK << " Some regex conversion tests failed." << std::endl;
         return 1; // Indicate failure
     } else {
         logSuccess("All regex conversion tests passed!");

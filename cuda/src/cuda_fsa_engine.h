@@ -6,7 +6,7 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include "../../common/include/fsa_definition.h"
-#include "../../common/benchmark/benchmark_metrics.h" // Ensure BenchmarkMetrics is included
+#include "../../common/include/benchmark_metrics.h" // Updated include path
 
 // Costanti per l'implementazione CUDA
 #define MAX_STATES 100

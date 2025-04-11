@@ -1,7 +1,7 @@
 #ifndef CUDA_MATRIX_OPS_H
 #define CUDA_MATRIX_OPS_H
 
-#include "../../common/benchmark/benchmark_metrics.h"
+#include "../../common/include/benchmark_metrics.h"
 
 namespace CUDAMatrixOps {
 

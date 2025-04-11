@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "../../common/benchmark/benchmark_metrics.h"
+#include "../../common/include/benchmark_metrics.h" // Updated include path
 #include "../../common/include/fsa_definition.h"
 
 // Forward declarations for CUDA-specific types

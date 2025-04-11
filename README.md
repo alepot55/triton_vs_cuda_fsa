@@ -15,7 +15,7 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Building the Project](#building-the-project)
-- [Running the Benchmarks](#running-the-benchmarks)
+- [Running Tests and Benchmarks](#running-tests-and-benchmarks)
 - [Performance Analysis](#performance-analysis)
 - [Developer Experience Comparison](#developer-experience-comparison)
 - [Benchmark Results](#benchmark-results)
@@ -37,21 +37,18 @@ To what extent can Triton, a high-level GPU programming language, simplify devel
 
 The project adopted a comparative evaluation approach that included:
 
-* **Implementation:** Development of an execution engine for Finite State Automata (FSA) in both CUDA C++ (low-level language) and Triton (high-level Python-like language).
-* **Benchmarking:** Definition of a suite of benchmarks with different types of FSA and inputs, and execution of comparative benchmarks to measure the performance of the FSA engine in CUDA and Triton.
-* **Comparative Analysis:** Quantitative comparison of performance (throughput, latency) and qualitative evaluation of programming complexity and user experience in CUDA and Triton.
+*   **Implementation:** Development of an execution engine for Finite State Automata (FSA) in both CUDA C++ (low-level language) and Triton (high-level Python-like language). Includes implementations for matrix multiplication and vector addition for broader comparison.
+*   **Benchmarking:** Definition of a suite of benchmarks with different types of FSA, matrix sizes, vector lengths, and inputs. Execution of comparative benchmarks to measure the performance in CUDA and Triton.
+*   **Comparative Analysis:** Quantitative comparison of performance (throughput, latency, memory usage, GPU utilization) and qualitative evaluation of programming complexity and user experience in CUDA and Triton.
 
 ## Key Findings
 
 Our investigation revealed several important insights:
 
-* **Performance Comparison:** Triton achieved comparable performance to CUDA for most simple FSA patterns, with execution times typically within 5-10% of CUDA implementations. For complex patterns with large state spaces, CUDA maintained a performance advantage of 15-20%.
-
-* **Development Efficiency:** Triton implementation required approximately 40% less code than the equivalent CUDA implementation, with significantly reduced boilerplate code for memory management and kernel configuration.
-
-* **Programming Complexity:** The learning curve for developers new to GPU programming was found to be significantly lower with Triton, which leverages Python's familiar syntax and abstracts many GPU-specific concepts.
-
-* **Memory Management:** CUDA demonstrated more efficient memory usage, typically consuming 10-15% less memory than the Triton implementation for equivalent tasks.
+*   **Performance Comparison:** Triton achieved comparable performance to CUDA for most simple FSA patterns and standard operations like vector addition, with execution times often within a close margin. For complex FSA patterns with large state spaces and large matrix multiplications, CUDA maintained a noticeable performance advantage.
+*   **Development Efficiency:** Triton implementation generally required less code than the equivalent CUDA implementation, particularly for the FSA engine, with significantly reduced boilerplate for memory management and kernel configuration.
+*   **Programming Complexity:** The learning curve for developers new to GPU programming was found to be significantly lower with Triton, which leverages Python's familiar syntax and abstracts many GPU-specific concepts.
+*   **Memory Management:** CUDA demonstrated more efficient memory usage, typically consuming less memory than the Triton implementation for equivalent tasks, especially noticeable in matrix operations.
 
 ## Repository Structure
 
@@ -59,29 +56,31 @@ The current project structure:
 
 ```
 triton_vs_cuda_fsa/
-├── common/                   # Shared code between implementations
-│   ├── benchmark/            # Common benchmark utilities
-│   ├── data/                 # Test data and benchmark inputs
-│   ├── include/              # Common header files
-│   └── src/                  # Common source implementation
-├── cuda/                     # CUDA implementation
-│   ├── obj/                  # Compiled object files
-│   └── src/                  # CUDA source code
-├── docs/                     # Project documentation
+├── common/                   # Shared C++ code
+│   ├── include/              # Common header files (fsa_definition.h, benchmark_metrics.h, cmdline.h)
+│   └── src/                  # Common source implementation (regex_conversion.cpp, cmdline.cpp)
+├── cuda/                     # CUDA C++ implementation
+│   ├── include/              # CUDA-specific headers (if any)
+│   └── src/                  # CUDA source code (cuda_fsa_engine, cuda_matrix_ops, cuda_utils, kernels)
+├── docs/                     # Project documentation (if any)
 ├── environment.yml           # Conda environment definition
 ├── LICENSE                   # MIT License file
 ├── README.md                 # This documentation file
-├── results/                  # Benchmark results and visualizations
-├── scripts/                  # Analysis and utility scripts
+├── results/                  # Benchmark results (CSV files) and visualizations (PNG files)
+├── scripts/                  # Analysis (Jupyter notebook) and utility scripts (Python)
 ├── setup_env.sh              # Environment setup script
 ├── tests/                    # Test suite for the project
-│   ├── cases/                # Test case definitions
-│   ├── cuda/                 # CUDA-specific tests
-│   ├── regex/                # Regex conversion tests
-│   └── triton/               # Triton-specific tests
-└── triton/                   # Triton implementation
-    ├── obj/                  # Compiled objects for Triton
-    └── src/                  # Triton source code
+│   ├── build/                # CMake build directory (generated)
+│   ├── cases/                # Test case definitions (test_cases.txt, test_case.h/cpp)
+│   ├── cuda/                 # CUDA FSA test runner source and CMakeLists.txt
+│   ├── matrix/               # Matrix operations test runner sources and CMakeLists.txt
+│   ├── regex/                # Regex conversion test runner source and CMakeLists.txt
+│   ├── triton/               # Triton test runner scripts (Python)
+│   ├── CMakeLists.txt        # Main CMake file for tests
+│   └── run_tests.sh          # Master script to build and run all tests/benchmarks
+└── triton/                   # Triton implementation (Python)
+    ├── obj/                  # Compiled objects for C++ helper library
+    └── src/                  # Triton source code (triton_fsa_engine.py, triton_matrix_ops.py)
 ```
 
 ## Quick Start
@@ -90,57 +89,65 @@ To quickly get started with the project:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/triton_vs_cuda_fsa.git
+git clone https://github.com/yourusername/triton_vs_cuda_fsa.git # Replace with actual URL
 cd triton_vs_cuda_fsa
 
-# Set up the environment
+# Set up the Conda environment
 ./setup_env.sh
 
-# Run tests to verify the setup
-cd tests/
-./run_tests.sh
+# Activate the environment (if setup_env.sh doesn't do it)
+# conda activate triton_vs_cuda_fsa
 
-# Run benchmarks and generate visualizations
-cd ../scripts/
-./run_benchmarks.sh
+# Build and run tests (this script handles CMake configuration and building)
+./tests/run_tests.sh --all
+
+# Run benchmarks (add --benchmark flag to the test script)
+./tests/run_tests.sh --all --benchmark
+
+# Analyze results (requires Jupyter Lab/Notebook)
+cd scripts/
+jupyter lab triton_vs_cuda_analysis.ipynb
 ```
 
 ## Prerequisites
 
 ### Hardware Requirements
-* NVIDIA GPU compatible with CUDA (tested on RTX 4070)
-* Sufficient GPU memory (at least 8GB recommended)
-* CPU with at least 4 cores for handling data preparation
+*   NVIDIA GPU compatible with CUDA (Compute Capability 7.0+ recommended, tested on RTX 4070)
+*   Sufficient GPU memory (at least 8GB recommended)
+*   CPU with at least 4 cores
 
 ### Software Requirements
-* **Operating System:** Ubuntu 20.04 LTS or newer (recommended)
-* **NVIDIA Drivers:** Version 470.x or newer
-* **CUDA Toolkit:** Version 11.x or newer
-* **Python:** Version 3.8 or newer
-* **Build Tools:** CMake 3.10+, GCC 9+, Make
+*   **Operating System:** Ubuntu 20.04 LTS or newer (recommended)
+*   **NVIDIA Drivers:** Version 470.x or newer
+*   **CUDA Toolkit:** Version 11.x or 12.x (Ensure compatibility with PyTorch/Triton versions)
+*   **Python:** Version 3.8 - 3.10 recommended (check Triton compatibility)
+*   **Build Tools:** CMake 3.10+, GCC 9+, Make
+*   **Conda:** Anaconda or Miniconda for environment management
 
 ## Installation
 
 ### 1. Environment Setup
 
-You can use the provided setup script:
+The recommended way is using the provided setup script which creates a Conda environment from `environment.yml`:
 
 ```bash
 ./setup_env.sh
 ```
 
-Or manually create a conda environment:
+Alternatively, create the environment manually:
 
 ```bash
 # Create and activate conda environment
 conda env create -f environment.yml
-conda activate triton-vs-cuda
+conda activate triton_vs_cuda_fsa
 
 # Verify installation
 python -c "import torch; import triton; print(f'PyTorch: {torch.__version__}, Triton: {triton.__version__}, CUDA available: {torch.cuda.is_available()}')"
 ```
 
 ### 2. Verify CUDA Installation
+
+Ensure `nvcc` is in your PATH and `nvidia-smi` works:
 
 ```bash
 nvcc --version
@@ -149,149 +156,138 @@ nvidia-smi
 
 ## Building the Project
 
-### CUDA Implementation
-
-Build the CUDA implementation:
-
-```bash
-cd cuda/
-make clean && make
-```
-
-This compiles the CUDA source code and generates the necessary object files and executables.
-
-### Triton Implementation
-
-The Triton implementation uses just-in-time compilation, so no separate build step is required.
-
-## Running the Benchmarks
-
-### Running CUDA Benchmarks
+The C++/CUDA components are built using CMake via the test script. To build manually:
 
 ```bash
 cd tests/
+mkdir -p build
+cd build
+cmake ..
+make -j$(nproc) # Build using multiple cores
+```
+
+This compiles the C++ common code, CUDA code, and test runners into the `tests/build/` directory.
+
+The Triton implementation uses just-in-time compilation, so no separate build step is required for the Python parts, but the C++ helper library (`regex_conversion.so`) is compiled by the `run_tests.sh` script when Triton tests are run.
+
+## Running Tests and Benchmarks
+
+The primary way to run tests and benchmarks is using the master script in the `tests/` directory.
+
+```bash
+cd tests/
+
+# Run all functional tests (no benchmarks)
+./run_tests.sh --all
+
+# Run only CUDA FSA tests
 ./run_tests.sh --cuda
-```
 
-For specific benchmarks:
-
-```bash
-cd cuda/
-./benchmark_fsa --regex="(0|1)*1" --input="0101" --batch-size=1000 --iterations=100
-```
-
-### Running Triton Benchmarks
-
-```bash
-cd tests/
+# Run only Triton FSA tests
 ./run_tests.sh --triton
+
+# Run only Matrix operation tests
+./run_tests.sh --matrix
+
+# Run ALL tests AND benchmarks (saves results to ../results/)
+./run_tests.sh --all --benchmark
+
+# Run with verbose output (shows build commands and test runner details)
+./run_tests.sh --all --verbose --benchmark
 ```
 
-For specific Triton benchmarks:
-
-```bash
-cd triton/src/
-python -m benchmark_fsa_triton --regex="(0|1)*1" --input="0101" --batch-size=1000 --iterations=100
-```
-
-### Running Comprehensive Comparison
-
-```bash
-./scripts/run_benchmarks.sh --all
-```
+The script handles building the necessary executables and libraries before running the tests. Benchmark results are saved as CSV files in the `results/` directory.
 
 ## Performance Analysis
 
 Our benchmarks measured several key performance metrics:
 
-* **Execution Time:** Total time for FSA processing including kernel execution and memory transfers
-* **Kernel Time:** Time spent exclusively in GPU computation
-* **Memory Transfer Time:** Time spent transferring data between CPU and GPU
-* **GPU Utilization:** Percentage of GPU computational resources utilized
-* **Memory Usage:** Amount of GPU memory used during execution
+*   **Execution Time:** Total time for processing including kernel execution and memory transfers.
+*   **Kernel Time:** Time spent exclusively in GPU computation.
+*   **Memory Transfer Time:** Time spent transferring data between CPU and GPU.
+*   **GPU Utilization:** Percentage of GPU computational resources utilized (requires NVML).
+*   **Memory Usage:** Amount of GPU memory used during execution.
+*   **Memory Bandwidth:** Achieved data transfer rate between host and device.
 
-The results demonstrated that:
+The analysis notebook `scripts/triton_vs_cuda_analysis.ipynb` processes the CSV files generated by the benchmarks and provides detailed comparisons and visualizations.
 
-1. **Simple FSA Patterns:** For simple regular expressions like `(0|1)*1`, Triton and CUDA exhibited comparable performance, with Triton sometimes achieving slightly better execution times due to its optimized memory access patterns.
-
-2. **Complex State Machines:** For FSAs with larger state spaces (>50 states), CUDA's fine-grained memory control provided a performance advantage of approximately 15-20%.
-
-3. **Compilation Overhead:** Triton had higher initial compilation overhead, but this was amortized when processing large batches of input strings.
-
-4. **Memory Efficiency:** CUDA demonstrated more efficient memory usage, typically consuming 10-15% less memory than the Triton implementation for equivalent tasks.
+Key observations include:
+*   CUDA generally outperforms Triton in raw execution speed for complex custom kernels (FSA).
+*   Triton can be competitive for simpler or standard operations (vector add).
+*   Triton exhibits higher memory usage compared to optimized CUDA code.
+*   Triton has a compilation overhead, which is more noticeable on the first run or with small inputs.
 
 ## Developer Experience Comparison
 
 A qualitative assessment of developer experience revealed:
 
-* **CUDA Implementation:** Required approximately 1,500 lines of code, with significant complexity in memory management, kernel configuration, and explicit thread synchronization.
-
-* **Triton Implementation:** Required only about 900 lines of code, with higher-level abstractions that simplified development but occasionally limited fine-grained control over execution.
-
-* **Debugging:** CUDA offered more mature debugging tools, while Triton debugging was more challenging due to its higher level of abstraction.
-
-* **Productivity:** Developers new to GPU programming were able to produce functioning FSA implementations approximately 40% faster with Triton compared to CUDA.
+*   **CUDA Implementation:** Requires detailed knowledge of GPU architecture, memory management (global, shared, constant), thread synchronization, and C++/CUDA syntax. Offers maximum control and performance potential. Debugging can be complex but benefits from mature tools (like `cuda-gdb`, Nsight Systems/Compute).
+*   **Triton Implementation:** Leverages Python syntax, simplifying kernel writing. Abstracts away much of the boilerplate associated with CUDA (memory allocation, grid/block calculation, data transfers via PyTorch tensors). Debugging is less mature than CUDA but improving. Offers significantly faster development cycles, especially for Python-centric developers.
 
 ## Benchmark Results
 
-Below are some of the key performance visualizations from our benchmarking:
+Visualizations comparing performance and resource usage are generated by the analysis notebook and saved in the `results/` directory. Key plots include:
 
+*   Average Execution Time Comparison
+*   Execution Time Distributions (Boxplots)
+*   Kernel Time vs. Total Execution Time Scatter Plot
+*   Memory Usage Comparison
+*   FSA-specific analysis (Speedup Ratios, Pattern Complexity Impact)
+
+*(Placeholder images - these should be updated/generated by the analysis script)*
 <p align="center">
-    <img src="results/performance_comparison.png" alt="Performance Comparison" width="600"/>
+    <img src="results/performance_comparison_multi_benchmark.png" alt="Performance Comparison" width="700"/>
     <br>
-    <em>Overall Performance Comparison between CUDA and Triton</em>
+    <em>Overall Performance Comparison across Benchmarks</em>
 </p>
-
 <p align="center">
-    <img src="results/pattern_complexity_comparison.png" alt="Pattern Complexity Impact" width="600"/>
+    <img src="results/fsa_pattern_complexity_comparison.png" alt="Pattern Complexity Impact" width="600"/>
     <br>
     <em>Impact of FSA Pattern Complexity on Performance</em>
 </p>
-
 <p align="center">
-    <img src="results/memory_usage_comparison.png" alt="Memory Usage" width="600"/>
+    <img src="results/memory_usage_comparison_multi.png" alt="Memory Usage" width="700"/>
     <br>
-    <em>Memory Usage Comparison</em>
+    <em>Memory Usage Comparison across Benchmarks</em>
 </p>
 
-For detailed benchmark results, refer to CSV files in the `results/` directory.
+For detailed numerical results, refer to the CSV files in the `results/` directory.
 
 ## Conclusion
 
-This comparative study demonstrates that Triton offers a viable alternative to CUDA for implementing Finite State Automata on GPUs, particularly for developers prioritizing productivity and code simplicity over absolute maximum performance. While CUDA maintains advantages in performance optimization for complex state machines, Triton provides sufficient performance for many FSA workloads with significantly reduced development complexity.
+This comparative study demonstrates that Triton offers a viable alternative to CUDA for implementing GPU kernels, particularly for developers prioritizing productivity and code simplicity. While CUDA maintains advantages in raw performance optimization and memory efficiency, especially for complex custom kernels like FSAs, Triton provides competitive performance for many workloads (like vector addition) with significantly reduced development complexity.
 
-The trade-off between development efficiency and performance optimization depends on specific use cases. For applications where FSA performance is mission-critical and justifies extensive optimization effort, CUDA remains the preferred choice. For rapid prototyping or applications where developer productivity is prioritized over squeezing the last bit of performance, Triton offers an attractive alternative with a gentler learning curve.
+The choice between Triton and CUDA depends on the specific application requirements:
+*   **CUDA:** Best for maximum performance, fine-grained control, and memory optimization, especially when development time is less critical than runtime speed.
+*   **Triton:** Excellent for rapid prototyping, Python-integrated workflows, and situations where developer productivity is paramount and the performance difference is acceptable.
 
 ## Future Work
 
 Potential directions for future research include:
 
-* Extending the comparison to more complex automata types like nondeterministic finite automata (NFAs) and pushdown automata
-* Evaluating the scalability of both implementations with extremely large input datasets
-* Investigating hybrid approaches that combine Triton's productivity with CUDA's performance in critical sections
-* Exploring the applicability of the findings to other non-traditional GPU workloads beyond FSAs
-* Analyzing the impact of different GPU architectures on the relative performance of Triton vs. CUDA implementations
+*   Extending the comparison to more complex automata types (NFAs, Pushdown Automata).
+*   Evaluating scalability with larger batch sizes and input data sizes.
+*   Investigating advanced Triton features (e.g., block pointers, different scheduling options).
+*   Analyzing the impact of different GPU architectures.
+*   Exploring hybrid approaches combining Triton and CUDA.
 
 ## Contributing
 
-Contributions to this project are welcome! Here's how you can contribute:
+Contributions are welcome! Please follow these steps:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Implement your changes
-4. Run tests to ensure functionality (`./tests/run_tests.sh`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-Please ensure your code follows the project's coding standards and includes appropriate tests.
+1.  Fork the repository.
+2.  Create a feature branch (`git checkout -b feature/your-feature`).
+3.  Implement your changes.
+4.  Ensure your code builds and tests pass (`./tests/run_tests.sh --all`).
+5.  Commit your changes (`git commit -m 'Add some feature'`).
+6.  Push to the branch (`git push origin feature/your-feature`).
+7.  Open a Pull Request.
 
 ## Acknowledgments
 
-* OpenAI for developing the Triton programming language
-* NVIDIA for the CUDA toolkit and developer resources
-* PyTorch team for framework support
-* All contributors who helped with testing and feedback
+*   OpenAI for developing the Triton programming language.
+*   NVIDIA for the CUDA toolkit and developer resources.
+*   The PyTorch team for the framework integration.
 
 ## License
 

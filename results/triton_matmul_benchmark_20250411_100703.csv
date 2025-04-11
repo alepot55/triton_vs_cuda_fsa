@@ -1,2 +1,2 @@
 implementation;operation;M;N;K;execution_time_ms;kernel_time_ms;mem_transfer_time_ms;memory_used_bytes;gpu_util_percent
-Triton;vecadd;10000000;1;1;13.04006576538086;0.3333091735839844;12.706756591796875;128519680;6.0
+Triton;matmul;2048;2048;2048;8.93402099609375;2.995729446411133;5.938291549682617;58851328;2.0

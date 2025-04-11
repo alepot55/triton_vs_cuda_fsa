@@ -188,6 +188,64 @@ run_cmd() {
     return $?
 }
 
+# Function to run test executables and capture status
+run_test_executable() {
+    local test_name="$1"
+    local executable_path="$2"
+    shift 2 # Remove test_name and executable_path from args
+    local args=("$@")
+    local log_prefix="${test_name// /_}" # Replace spaces for log filename
+
+    log_progress "Running ${test_name} tests..."
+
+    if [ "$VERBOSE" = true ]; then
+        "$executable_path" "${args[@]}"
+        TEST_RESULT=$?
+    else
+        # Redirect stdout to log, keep stderr for errors
+        "$executable_path" "${args[@]}" > "/tmp/${log_prefix}_test_output.log" 2>&1
+        TEST_RESULT=$?
+    fi
+
+    if [ $TEST_RESULT -ne 0 ]; then
+        log_error "${test_name} tests failed (Exit code: ${TEST_RESULT})"
+        ALL_TESTS_PASSED=false
+        return 1 # Indicate failure
+    else
+        log_success "${test_name} tests passed"
+        return 0 # Indicate success
+    fi
+}
+
+# Function to run python test scripts and capture status
+run_python_test_script() {
+    local test_name="$1"
+    local script_path="$2"
+    shift 2 # Remove test_name and script_path from args
+    local args=("$@")
+    local log_prefix="${test_name// /_}" # Replace spaces for log filename
+
+    log_progress "Running ${test_name} tests..."
+
+    if [ "$VERBOSE" = true ]; then
+        python "$script_path" "${args[@]}"
+        TEST_RESULT=$?
+    else
+        # Redirect stdout to log, keep stderr for errors
+        python "$script_path" "${args[@]}" > "/tmp/${log_prefix}_test_output.log" 2>&1
+        TEST_RESULT=$?
+    fi
+
+    if [ $TEST_RESULT -ne 0 ]; then
+        log_error "${test_name} tests failed (Exit code: ${TEST_RESULT})"
+        ALL_TESTS_PASSED=false
+        return 1 # Indicate failure
+    else
+        log_success "${test_name} tests passed"
+        return 0 # Indicate success
+    fi
+}
+
 # Display a welcome banner - più minimale e elegante
 echo -e "\n${BOLD}${CYAN}FSA Testing Framework${RESET} ${BRIGHT_BLACK}v1.0${RESET}"
 echo -e "${BRIGHT_BLACK}Started at $(date)${RESET}\n"
@@ -232,25 +290,8 @@ log_success "Tests built successfully"
 if [ "$TEST_REGEX" = true ]; then
     print_header "Running Regex Tests"
     if [ -f "./regex/test_regex_conversion" ]; then
-        log_info "Running Regex tests..."
-        
-        if [ "$VERBOSE" = true ]; then
-            ./regex/test_regex_conversion "$PROJECT_DIR/tests/cases/test_cases.txt"
-            TEST_RESULT=$?
-        else
-            # Modificato per evitare doppi output e messaggi grep
-            test_output=$(./regex/test_regex_conversion "$PROJECT_DIR/tests/cases/test_cases.txt" 2>/dev/null)
-            TEST_RESULT=$?
-            echo "$test_output" | grep -E "passed|Summary|Failed" 2>/dev/null
-        fi
-        
-        if [ $TEST_RESULT -ne 0 ]; then
-            log_error "Regex tests failed"
-            ALL_TESTS_PASSED=false
-        else
-            log_success "Regex tests passed"
-            REGEX_TEST_PASSED=true
-        fi
+        run_test_executable "Regex Conversion" ./regex/test_regex_conversion "$PROJECT_DIR/tests/cases/test_cases.txt"
+        if [ $? -eq 0 ]; then REGEX_TEST_PASSED=true; fi
     else
         log_error "Regex test executable not found"
         ALL_TESTS_PASSED=false
@@ -260,55 +301,34 @@ fi
 # Run CUDA tests if enabled and available
 if [ "$TEST_CUDA" = true ]; then
     if [ -f "./cuda/cuda_test_runner" ]; then
-        print_header "Running CUDA Tests"
-        log_info "Running CUDA tests..."
-        
-        # Add benchmark flag if enabled
+        print_header "Running CUDA FSA Tests"
         BENCHMARK_FLAG=""
-        if [ "$RUN_BENCHMARK" = true ]; then
-            BENCHMARK_FLAG="--benchmark"
-        fi
-        
-        # Run with or without verbose flag, passing benchmark flag and results dir
-        if [ "$VERBOSE" = true ]; then
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" --verbose $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
-            TEST_RESULT=$?
-        else
-            ./cuda/cuda_test_runner "$PROJECT_DIR/tests/cases/test_cases.txt" $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
-            TEST_RESULT=$?
-        fi
-        
-        # Check if tests were successful by looking for the pass rate
-        if [ $TEST_RESULT -eq 0 ]; then
-            log_success "CUDA tests completed successfully"
-            CUDA_TEST_PASSED=true
-        else
-            log_error "CUDA tests had failures"
-            ALL_TESTS_PASSED=false
-        fi
+        if [ "$RUN_BENCHMARK" = true ]; then BENCHMARK_FLAG="--benchmark"; fi
+        VERBOSE_FLAG=""
+        if [ "$VERBOSE" = true ]; then VERBOSE_FLAG="--verbose"; fi
+
+        run_test_executable "CUDA FSA" ./cuda/cuda_test_runner \
+            "$PROJECT_DIR/tests/cases/test_cases.txt" \
+            $VERBOSE_FLAG $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1
+        if [ $? -eq 0 ]; then CUDA_TEST_PASSED=true; fi
     else
-        log_error "CUDA tests not available"
-        if [ "$TEST_CUDA" = true ]; then
-            ALL_TESTS_PASSED=false
-        fi
+        log_error "CUDA FSA test runner not found"
+        ALL_TESTS_PASSED=false
     fi
 fi
 
 # Run Triton tests if enabled
 if [ "$TEST_TRITON" = true ]; then
-    print_header "Running Triton Tests"
+    print_header "Running Triton FSA Tests"
     TRITON_TEST_RUNNER="$PROJECT_DIR/tests/triton/triton_test_runner.py"
     TEST_FILE="$PROJECT_DIR/tests/cases/test_cases.txt"
-    
-    # Compile the regex_conversion.so library for Triton tests
+
     log_info "Compiling regex_conversion shared library..."
     REGEX_SRC="$PROJECT_DIR/common/src/regex_conversion.cpp"
     TRITON_OBJ_DIR="$PROJECT_DIR/triton/obj"
     
-    # Create triton/obj directory if it doesn't exist
     mkdir -p "$TRITON_OBJ_DIR"
     
-    # Compile the shared library with additional include paths
     if [ "$VERBOSE" = true ]; then
         g++ -shared -o "$TRITON_OBJ_DIR/regex_conversion.so" -fPIC \
             -I"$PROJECT_DIR/include" \
@@ -327,156 +347,63 @@ if [ "$TEST_TRITON" = true ]; then
     
     if [ $? -eq 0 ]; then
         log_success "Compiled regex_conversion.so successfully"
+
+        if [ -f "$TRITON_TEST_RUNNER" ]; then
+            if [ -f "$PROJECT_DIR/environment.yml" ]; then
+                if command -v conda &> /dev/null; then
+                    ENV_NAME=$(grep "name:" "$PROJECT_DIR/environment.yml" | cut -d' ' -f2)
+                    if [ -n "$ENV_NAME" ]; then
+                        log_info "Activating conda: ${ENV_NAME}"
+                        source "$(conda info --base)/etc/profile.d/conda.sh"
+                        conda activate "$ENV_NAME" 2>/dev/null
+                    fi
+                fi
+            fi
+
+            BENCHMARK_FLAG=""
+            if [ "$RUN_BENCHMARK" = true ]; then BENCHMARK_FLAG="--benchmark"; fi
+            VERBOSE_FLAG=""
+            if [ "$VERBOSE" = true ]; then VERBOSE_FLAG="--verbose"; fi
+
+            run_python_test_script "Triton FSA" "$TRITON_TEST_RUNNER" \
+                "$TEST_FILE" $VERBOSE_FLAG $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1
+            if [ $? -eq 0 ]; then TRITON_TEST_PASSED=true; fi
+        else
+            log_error "Triton test runner not found"
+            ALL_TESTS_PASSED=false
+        fi
     else
         log_error "Failed to compile regex_conversion.so"
         ALL_TESTS_PASSED=false
-        TEST_TRITON=false
-    fi
-    
-    if [ -f "$TRITON_TEST_RUNNER" ]; then
-        # Set up Python environment if needed
-        if [ -f "$PROJECT_DIR/environment.yml" ]; then
-            if command -v conda &> /dev/null; then
-                ENV_NAME=$(grep "name:" "$PROJECT_DIR/environment.yml" | cut -d' ' -f2)
-                if [ -n "$ENV_NAME" ]; then
-                    log_info "Activating conda: ${ENV_NAME}"
-                    source "$(conda info --base)/etc/profile.d/conda.sh"
-                    conda activate "$ENV_NAME" 2>/dev/null
-                fi
-            fi
-        fi
-        
-        log_info "Running Triton tests..."
-        
-        # Add benchmark flag if enabled
-        BENCHMARK_FLAG=""
-        if [ "$RUN_BENCHMARK" = true ]; then
-            BENCHMARK_FLAG="--benchmark"
-        fi
-        
-        # Run Triton tests using the test runner with appropriate verbosity, benchmark flag, and results dir
-        if [ "$VERBOSE" = true ]; then
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE" --verbose $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
-            TEST_RESULT=$?
-        else
-            python "$TRITON_TEST_RUNNER" "$TEST_FILE" $BENCHMARK_FLAG $RESULTS_DIR_ARG --batch-size=1 # Example batch size
-            TEST_RESULT=$?
-        fi
-        
-        # Check exit code for success/failure
-        if [ $TEST_RESULT -eq 0 ]; then
-            log_success "Triton tests completed successfully"
-            TRITON_TEST_PASSED=true
-        else
-            log_error "Triton tests had failures"
-            ALL_TESTS_PASSED=false
-        fi
-    else
-        log_error "Triton test runner not found"
-        if [ "$TEST_TRITON" = true ]; then
-            ALL_TESTS_PASSED=false
-        fi
     fi
 fi
 
 # Run matrix operation tests if enabled
 if [ "$TEST_MATRIX" = true ]; then
     print_header "Running Matrix Operation Tests"
-    
-    # First check if we can run CUDA matrix tests
-    if [ -d "./matrix" ]; then
-        # Compile CUDA matrix test runner if it doesn't exist
-        if [ ! -f "./matrix/cuda_matrix_test_runner" ]; then
-            log_info "Compiling CUDA matrix test runner..."
-            
-            # Create build directory for matrix tests if it doesn't exist
-            mkdir -p "$SCRIPT_DIR/build/matrix"
-            cd "$SCRIPT_DIR/build/matrix"
-            
-            # Run cmake for the matrix tests
-            if [ "$VERBOSE" = true ]; then
-                cmake "$SCRIPT_DIR/matrix" -DCMAKE_BUILD_TYPE=Release -Wno-dev
-                make -j4
-            else
-                cmake "$SCRIPT_DIR/matrix" -DCMAKE_BUILD_TYPE=Release -Wno-dev >> "$LOG_FILE" 2>&1
-                make -j4 >> "$LOG_FILE" 2>&1
-            fi
-            
-            # Check if compilation was successful
-            if [ $? -ne 0 ]; then
-                log_error "Failed to compile CUDA matrix test runner"
-                ALL_TESTS_PASSED=false
-            else
-                log_success "CUDA matrix test runner compiled successfully"
-            fi
-            
-            # Go back to the build directory
-            cd "$SCRIPT_DIR/build"
-        fi
-        
-        # Run CUDA matrix tests
-        log_info "Running CUDA matrix tests..."
-        
-        # Add benchmark flag if enabled
+
+    # CUDA Matrix Tests
+    if [ -f "./matrix/cuda_matrix_test_runner" ]; then
         BENCHMARK_FLAG=""
-        if [ "$RUN_BENCHMARK" = true ]; then
-            BENCHMARK_FLAG="--benchmark" # CUDA runner uses --benchmark implicitly with results dir
-        fi
-        
-        # Run the tests, passing results dir arg which implies benchmark for this runner
-        if [ "$VERBOSE" = true ]; then
-            ./matrix/cuda_matrix_test_runner $RESULTS_DIR_ARG # Pass results dir
-            CUDA_MATRIX_RESULT=$?
-        else
-            ./matrix/cuda_matrix_test_runner $RESULTS_DIR_ARG > /tmp/cuda_matrix_output.log 2>&1 # Pass results dir
-            CUDA_MATRIX_RESULT=$?
-            cat /tmp/cuda_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
-        fi
-        
-        # Check if tests were successful
-        if [ $CUDA_MATRIX_RESULT -eq 0 ]; then
-            log_success "CUDA matrix tests completed successfully"
-            MATRIX_CUDA_TEST_PASSED=true
-        else
-            log_error "CUDA matrix tests had failures"
-            ALL_TESTS_PASSED=false
-        fi
+        if [ "$RUN_BENCHMARK" = true ]; then BENCHMARK_FLAG="--benchmark"; fi
+        VERBOSE_FLAG=""
+        run_test_executable "CUDA Matrix" ./matrix/cuda_matrix_test_runner $RESULTS_DIR_ARG
+        if [ $? -eq 0 ]; then MATRIX_CUDA_TEST_PASSED=true; fi
     else
-        log_error "CUDA matrix tests not available"
+        log_error "CUDA matrix test runner not found"
         ALL_TESTS_PASSED=false
     fi
-    
-    # Check if we can run Triton matrix tests
+
+    # Triton Matrix Tests
     TRITON_MATRIX_TEST_RUNNER="$PROJECT_DIR/tests/matrix/triton_matrix_test_runner.py"
     if [ -f "$TRITON_MATRIX_TEST_RUNNER" ]; then
-        log_info "Running Triton matrix tests..."
-        
-        # Add benchmark flag if enabled (Triton runner uses --benchmark implicitly with results dir)
-        BENCHMARK_FLAG=""
-        
-        # Run Triton matrix tests, passing results dir arg
-        if [ "$VERBOSE" = true ]; then
-            python "$TRITON_MATRIX_TEST_RUNNER" $RESULTS_DIR_ARG # Pass results dir
-            TRITON_MATRIX_RESULT=$?
-        else
-            python "$TRITON_MATRIX_TEST_RUNNER" $RESULTS_DIR_ARG > /tmp/triton_matrix_output.log 2>&1 # Pass results dir
-            TRITON_MATRIX_RESULT=$?
-            cat /tmp/triton_matrix_output.log | grep -E "SUCCESS|INFO|ERROR"
-        fi
-        
-        # Check if tests were successful
-        if [ $TRITON_MATRIX_RESULT -eq 0 ]; then
-            log_success "Triton matrix tests completed successfully"
-            MATRIX_TRITON_TEST_PASSED=true
-        else
-            log_error "Triton matrix tests had failures"
-            ALL_TESTS_PASSED=false
-        fi
+         BENCHMARK_FLAG=""
+         VERBOSE_FLAG=""
+         run_python_test_script "Triton Matrix" "$TRITON_MATRIX_TEST_RUNNER" $RESULTS_DIR_ARG
+         if [ $? -eq 0 ]; then MATRIX_TRITON_TEST_PASSED=true; fi
     else
-        log_error "Triton matrix tests not available"
-        if [ "$TEST_MATRIX" = true ]; then
-            ALL_TESTS_PASSED=false
-        fi
+        log_error "Triton matrix test runner not found"
+        ALL_TESTS_PASSED=false
     fi
 fi
 
@@ -486,53 +413,54 @@ if [ "$CLEAN_BUILD" = true ]; then
     rm -f "$LOG_FILE" &> /dev/null
 fi
 
-print_header "Tests completed"
+print_header "Final Test Summary"
 
-# Show which tests were run with improved formatting
-echo -e "${BOLD}${UNDERLINE}Test Results:${RESET}\n"
+# Show concise results based on flags
 if [ "$TEST_REGEX" = true ]; then
     if [ "$REGEX_TEST_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}Regex tests${RESET}    ${GREEN}Passed successfully${RESET}"
+        echo -e "  ${CHECK_MARK} Regex tests             ${GREEN}Passed${RESET}"
     else
-        echo -e "  ${CROSS_MARK} ${BOLD}Regex tests${RESET}    ${RED}Failed${RESET}"
+        echo -e "  ${CROSS_MARK} Regex tests             ${RED}Failed${RESET}"
     fi
 fi
 
 if [ "$TEST_CUDA" = true ]; then
     if [ "$CUDA_TEST_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}CUDA tests${RESET}     ${GREEN}Passed successfully${RESET}"
+        echo -e "  ${CHECK_MARK} CUDA FSA tests          ${GREEN}Passed${RESET}"
     else
-        echo -e "  ${CROSS_MARK} ${BOLD}CUDA tests${RESET}     ${RED}Failed${RESET}"
+        echo -e "  ${CROSS_MARK} CUDA FSA tests          ${RED}Failed${RESET}"
     fi
 fi
 
 if [ "$TEST_TRITON" = true ]; then
     if [ "$TRITON_TEST_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}Triton tests${RESET}   ${GREEN}Passed successfully${RESET}"
+        echo -e "  ${CHECK_MARK} Triton FSA tests        ${GREEN}Passed${RESET}"
     else
-        echo -e "  ${CROSS_MARK} ${BOLD}Triton tests${RESET}   ${RED}Failed${RESET}"
+        echo -e "  ${CROSS_MARK} Triton FSA tests        ${RED}Failed${RESET}"
     fi
 fi
 
 if [ "$TEST_MATRIX" = true ]; then
     if [ "$MATRIX_CUDA_TEST_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}CUDA matrix tests${RESET}    ${GREEN}Passed successfully${RESET}"
+        echo -e "  ${CHECK_MARK} CUDA Matrix tests       ${GREEN}Passed${RESET}"
     else
-        echo -e "  ${CROSS_MARK} ${BOLD}CUDA matrix tests${RESET}    ${RED}Failed${RESET}"
+        echo -e "  ${CROSS_MARK} CUDA Matrix tests       ${RED}Failed${RESET}"
     fi
-    
+
     if [ "$MATRIX_TRITON_TEST_PASSED" = true ]; then
-        echo -e "  ${CHECK_MARK} ${BOLD}Triton matrix tests${RESET}  ${GREEN}Passed successfully${RESET}"
+        echo -e "  ${CHECK_MARK} Triton Matrix tests     ${GREEN}Passed${RESET}"
     else
-        echo -e "  ${CROSS_MARK} ${BOLD}Triton matrix tests${RESET}  ${RED}Failed${RESET}"
+        echo -e "  ${CROSS_MARK} Triton Matrix tests     ${RED}Failed${RESET}"
     fi
 fi
 
 echo -e "\n${BRIGHT_BLACK}Completed at $(date)${RESET}"
 
-# Final status message with overall result - migliore e più minimalista
+# Final status message
 if [ "$ALL_TESTS_PASSED" = true ]; then
-    echo -e "\n${BOLD}${GREEN}✓ All tests completed successfully!${RESET} ${ROCKET}\n"
+    echo -e "\n${BOLD}${GREEN}✓ All executed tests completed successfully!${RESET} ${ROCKET}\n"
+    exit 0 # Exit with success code
 else
-    echo -e "\n${BOLD}${RED}✗ Some tests failed!${RESET} Check the logs for details.\n"
+    echo -e "\n${BOLD}${RED}✗ Some tests failed!${RESET} Check logs in /tmp/ or run with --verbose for details.\n"
+    exit 1 # Exit with failure code
 fi

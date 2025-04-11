@@ -1,4 +1,6 @@
 #include "../../cuda/src/cuda_matrix_ops.h"
+#include "../../cuda/src/cuda_utils.h" // Include CUDA utilities
+#include "../../common/include/benchmark_metrics.h" // Updated include path
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -92,13 +94,13 @@ void saveBenchmarkResults(const std::string& operation, const BenchmarkMetrics& 
     
     // Write CSV header
     csvFile << "implementation;operation;M;N;K;execution_time_ms;kernel_time_ms;"
-            << "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent" << std::endl;
+            << "mem_transfer_time_ms;memory_used_bytes;gpu_util_percent;memory_bandwidth_MBps" << std::endl; // Added bandwidth
     
     // Write benchmark data
     csvFile << "CUDA;" << operation << ";" << M << ";" << N << ";" << K << ";" 
             << metrics.execution_time_ms << ";" << metrics.kernel_time_ms << ";"
             << metrics.memory_transfer_time_ms << ";" << metrics.memory_used_bytes << ";" 
-            << metrics.gpu_utilization_percent << std::endl;
+            << metrics.gpu_utilization_percent << ";" << metrics.memory_bandwidth_MBps << std::endl; // Added bandwidth
     
     csvFile.close();
     logSuccess("Benchmark results saved to: " + benchmarkFile);
@@ -132,13 +134,14 @@ void benchmarkMatMul(int M, int N, int K, const std::string& resultsDir) {
     // Run benchmark
     BenchmarkMetrics metrics = CUDAMatrixOps::matmul(h_A, h_B, h_C, M, N, K);
     
-    // Print results
-    std::cout << "Matrix Multiplication (" << M << "x" << K << " * " << K << "x" << N << "):" << std::endl;
-    std::cout << "  Total time: " << metrics.execution_time_ms << " ms" << std::endl;
-    std::cout << "  Kernel time: " << metrics.kernel_time_ms << " ms" << std::endl;
-    std::cout << "  Memory transfer time: " << metrics.memory_transfer_time_ms << " ms" << std::endl;
-    std::cout << "  Memory used: " << metrics.memory_used_bytes / (1024.0f * 1024.0f) << " MB" << std::endl;
-    
+    // Print results with alignment
+    std::cout << "  " << std::left << std::setw(25) << "Total time:" << std::fixed << std::setprecision(3) << metrics.execution_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Kernel time:" << std::fixed << std::setprecision(3) << metrics.kernel_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory transfer time:" << std::fixed << std::setprecision(3) << metrics.memory_transfer_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory used:" << std::fixed << std::setprecision(2) << metrics.memory_used_bytes / (1024.0f * 1024.0f) << " MB" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "GPU Utilization:" << std::fixed << std::setprecision(1) << metrics.gpu_utilization_percent << " %" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory Bandwidth:" << std::fixed << std::setprecision(2) << metrics.memory_bandwidth_MBps << " MB/s" << std::endl;
+
     // Save benchmark results
     saveBenchmarkResults("matmul", metrics, M, N, K, resultsDir);
     
@@ -164,13 +167,14 @@ void benchmarkVectorAdd(int N, const std::string& resultsDir) {
     // Run benchmark
     BenchmarkMetrics metrics = CUDAMatrixOps::vector_add(h_A, h_B, h_C, N);
     
-    // Print results
-    std::cout << "Vector Addition (" << N << " elements):" << std::endl;
-    std::cout << "  Total time: " << metrics.execution_time_ms << " ms" << std::endl;
-    std::cout << "  Kernel time: " << metrics.kernel_time_ms << " ms" << std::endl;
-    std::cout << "  Memory transfer time: " << metrics.memory_transfer_time_ms << " ms" << std::endl;
-    std::cout << "  Memory used: " << metrics.memory_used_bytes / (1024.0f * 1024.0f) << " MB" << std::endl;
-    
+    // Print results with alignment
+    std::cout << "  " << std::left << std::setw(25) << "Total time:" << std::fixed << std::setprecision(3) << metrics.execution_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Kernel time:" << std::fixed << std::setprecision(3) << metrics.kernel_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory transfer time:" << std::fixed << std::setprecision(3) << metrics.memory_transfer_time_ms << " ms" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory used:" << std::fixed << std::setprecision(2) << metrics.memory_used_bytes / (1024.0f * 1024.0f) << " MB" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "GPU Utilization:" << std::fixed << std::setprecision(1) << metrics.gpu_utilization_percent << " %" << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Memory Bandwidth:" << std::fixed << std::setprecision(2) << metrics.memory_bandwidth_MBps << " MB/s" << std::endl;
+
     // Save benchmark results
     saveBenchmarkResults("vecadd", metrics, N, 1, 1, resultsDir);
     
@@ -304,6 +308,11 @@ int main(int argc, char** argv) {
     
     logInfo("Starting CUDA matrix operations test");
     
+    // Initialize NVML once at the start
+    if (!initNVML()) {
+        logInfo("NVML initialization failed. GPU utilization metrics will be unavailable.");
+    }
+
     // First run verification tests
     bool all_tests_passed = true;
     
@@ -352,5 +361,9 @@ int main(int argc, char** argv) {
     }
     
     logSuccess("Matrix operations tests and benchmarks completed successfully");
+
+    // Shutdown NVML at the end
+    shutdownNVML();
+
     return 0;
 }
